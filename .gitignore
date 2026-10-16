@@ -9,10 +9,6 @@ stats.svg
 *.pdb
 /Pixel fire asset pack v1.2/
 /assets/fire/red-idle/
-# Keep only orig.png backgrounds in git; layer dumps stay local.
-/bgs/**/1.png
-/bgs/**/2.png
-/bgs/**/3.png
-/bgs/**/4.png
-/bgs/**/5.png
+# Keep numbered parallax layers + orig; skip oversized dumps.
 /bgs/**/orig_big.png
+/bgs/**/orig.png

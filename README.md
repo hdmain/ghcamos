@@ -37,7 +37,7 @@ cargo run --release -- render --user hdmain --out stats.svg
 | `--out` / `-o` | stdout | output path |
 | `--token` | `GH_TOKEN` / `GITHUB_TOKEN` | PAT or Actions token |
 
-Pixel sky backgrounds live in [`bgs/`](bgs/) (`mornig`, `day`, `night`). Cron every 15m picks the period from Warsaw local time.
+Pixel sky backgrounds live in [`bgs/`](bgs/) (`mornig`, `day`, `night`) as stacked layers (`1.png` sky + drifting clouds). Cron every 15m picks the period from Warsaw local time; cloud layers slowly scroll via SMIL.
 
 ## GitHub Actions
 
