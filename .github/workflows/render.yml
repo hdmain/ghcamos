@@ -4,12 +4,8 @@ on:
   push:
     branches: [main, master]
   schedule:
-    # Avoid `*/15` and exact :00/:15/:30/:45 — GitHub often delays or drops those under load.
-    # Four staggered crons ≈ every 15m; schedule is best-effort, not a hard SLA.
-    - cron: "7 * * * *"
-    - cron: "22 * * * *"
-    - cron: "37 * * * *"
-    - cron: "52 * * * *"
+    # Once per hour, offset from :00 — high-frequency / top-of-hour crons often get dropped.
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 permissions:
