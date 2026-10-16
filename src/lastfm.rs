@@ -1,5 +1,6 @@
 //! Last.fm recent / now-playing track for the stats card.
 
+use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
@@ -7,7 +8,7 @@ use serde_json::Value;
 use crate::error::{AppError, Result};
 
 const LASTFM_API: &str = "https://ws.audioscrobbler.com/2.0/";
-/// Public readme widget used only as a keyless fallback (aria-label scrape).
+/// Public readme widget used only as a keyless fallback (aria-label + art scrape).
 const FALLBACK_SVG: &str = "https://lastfm-recently-played.jeffreyca.workers.dev/svg";
 
 #[derive(Debug, Clone)]
@@ -16,6 +17,8 @@ pub struct RecentTrack {
     pub name: String,
     pub album: Option<String>,
     pub now_playing: bool,
+    /// Self-contained `data:image/...;base64,...` for Camo-safe SVG embeds.
+    pub image_data_uri: Option<String>,
 }
 
 impl RecentTrack {
@@ -100,7 +103,11 @@ async fn fetch_via_api(user: &str, api_key: &str) -> Result<Option<RecentTrack>>
         return Ok(None);
     };
 
-    Ok(Some(parse_track_json(&track)?))
+    let mut recent = parse_track_json(&track)?;
+    if let Some(url) = pick_image_url(&track) {
+        recent.image_data_uri = fetch_image_data_uri(&client, &url).await.ok().flatten();
+    }
+    Ok(Some(recent))
 }
 
 fn parse_track_json(track: &Value) -> Result<RecentTrack> {
@@ -142,7 +149,61 @@ fn parse_track_json(track: &Value) -> Result<RecentTrack> {
         name,
         album,
         now_playing,
+        image_data_uri: None,
     })
+}
+
+fn pick_image_url(track: &Value) -> Option<String> {
+    let images = track.get("image")?.as_array()?;
+    // Prefer medium, then large, then whatever is non-empty.
+    let prefer = ["medium", "large", "extralarge", "small"];
+    for size in prefer {
+        for img in images {
+            let sz = img.get("size").and_then(|v| v.as_str()).unwrap_or("");
+            let url = img
+                .get("#text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+            if sz == size && !url.is_empty() {
+                return Some(url.to_string());
+            }
+        }
+    }
+    images.iter().rev().find_map(|img| {
+        let url = img.get("#text").and_then(|v| v.as_str()).unwrap_or("").trim();
+        if url.is_empty() {
+            None
+        } else {
+            Some(url.to_string())
+        }
+    })
+}
+
+async fn fetch_image_data_uri(client: &Client, url: &str) -> Result<Option<String>> {
+    let response = client.get(url).send().await?;
+    if !response.status().is_success() {
+        return Ok(None);
+    }
+    let ctype = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/jpeg")
+        .to_string();
+    let bytes = response.bytes().await?;
+    if bytes.is_empty() || bytes.len() > 250_000 {
+        return Ok(None);
+    }
+    let mime = if ctype.starts_with("image/") {
+        ctype.split(';').next().unwrap_or("image/jpeg")
+    } else {
+        "image/jpeg"
+    };
+    Ok(Some(format!(
+        "data:{mime};base64,{}",
+        B64.encode(bytes)
+    )))
 }
 
 async fn fetch_via_fallback_svg(user: &str) -> Result<Option<RecentTrack>> {
@@ -165,10 +226,10 @@ async fn fetch_via_fallback_svg(user: &str) -> Result<Option<RecentTrack>> {
     }
 
     let svg = response.text().await?;
-    Ok(parse_fallback_aria(&svg))
+    Ok(parse_fallback_svg(&svg))
 }
 
-fn parse_fallback_aria(svg: &str) -> Option<RecentTrack> {
+fn parse_fallback_svg(svg: &str) -> Option<RecentTrack> {
     let label = extract_attr(svg, "aria-label")?;
     // "Scrobbling now: Track by Artist" | "Last played: Track by Artist"
     let (now_playing, rest) = if let Some(r) = label.strip_prefix("Scrobbling now: ") {
@@ -182,12 +243,32 @@ fn parse_fallback_aria(svg: &str) -> Option<RecentTrack> {
     };
 
     let (name, artist) = split_track_by_artist(rest)?;
+    let image_data_uri = extract_data_image(svg);
     Some(RecentTrack {
         artist,
         name,
         album: None,
         now_playing,
+        image_data_uri,
     })
+}
+
+fn extract_data_image(svg: &str) -> Option<String> {
+    let markers = [
+        "href=\"data:image/",
+        "xlink:href=\"data:image/",
+    ];
+    for marker in markers {
+        if let Some(start) = svg.find(marker) {
+            let from = start + marker.len() - "data:image/".len();
+            let end = svg[from..].find('"')? + from;
+            let uri = &svg[from..end];
+            if uri.starts_with("data:image/") && uri.contains(";base64,") {
+                return Some(uri.to_string());
+            }
+        }
+    }
+    None
 }
 
 fn split_track_by_artist(s: &str) -> Option<(String, String)> {
@@ -215,10 +296,14 @@ mod tests {
 
     #[test]
     fn parses_now_playing_aria() {
-        let svg = r#"<svg aria-label="Scrobbling now: Uppercut by JDHD beats"></svg>"#;
-        let t = parse_fallback_aria(svg).unwrap();
+        let svg = r#"<svg aria-label="Scrobbling now: Uppercut by JDHD beats" href="data:image/png;base64,aaa"></svg>"#;
+        let t = parse_fallback_svg(svg).unwrap();
         assert!(t.now_playing);
         assert_eq!(t.name, "Uppercut");
         assert_eq!(t.artist, "JDHD beats");
+        assert_eq!(
+            t.image_data_uri.as_deref(),
+            Some("data:image/png;base64,aaa")
+        );
     }
 }

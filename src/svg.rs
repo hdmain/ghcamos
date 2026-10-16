@@ -281,28 +281,40 @@ fn render_repos(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) -> Str
 
 fn render_lastfm(track: &RecentTrack, theme: &Theme, x: f64, y: f64, w: f64) -> String {
     let status = track.label();
-    let line = truncate_chars(&format!("{} — {}", track.artist, track.name), 52);
+    let line = truncate_chars(&format!("{} — {}", track.artist, track.name), 48);
     let album = track
         .album
         .as_deref()
         .filter(|s| !s.is_empty())
         .map(|s| truncate_chars(s, 48))
         .unwrap_or_default();
-    let pulse = if track.now_playing {
-        r##"<circle cx="14" cy="34" r="4" fill="#1db954">
-  <animate attributeName="opacity" values="1;0.35;1" dur="1.4s" repeatCount="indefinite"/>
-</circle>"##
+
+    let art = if let Some(uri) = track.image_data_uri.as_deref() {
+        format!(
+            r##"<defs>
+  <clipPath id="lfmArt"><rect x="8" y="28" width="28" height="28" rx="5"/></clipPath>
+</defs>
+<image x="8" y="28" width="28" height="28" href="{uri}" xlink:href="{uri}" clip-path="url(#lfmArt)" preserveAspectRatio="xMidYMid slice"/>
+<rect x="8" y="28" width="28" height="28" rx="5" fill="none" stroke="{border}" stroke-width="1" opacity="0.55"/>"##,
+            uri = escape_xml(uri),
+            border = theme.border,
+        )
     } else {
-        r##"<circle cx="14" cy="34" r="4" fill="#8b949e"/>"##
+        format!(
+            r##"<rect x="8" y="28" width="28" height="28" rx="5" fill="{border}"/>
+<text x="22" y="47" text-anchor="middle" fill="{muted}" font-size="14">♪</text>"##,
+            border = theme.bar_track,
+            muted = theme.muted,
+        )
     };
 
     format!(
         r##"<g class="fade-in" style="animation-delay:0.85s" transform="translate({x:.1},{y:.1})">
   <text x="0" y="14" fill="{title}" font-size="14" font-weight="600">Last.fm</text>
   <rect x="0" y="22" width="{w:.1}" height="40" rx="8" fill="{card}"/>
-  {pulse}
-  <text x="28" y="38" fill="{muted}" font-size="11">{status}</text>
-  <text x="28" y="54" fill="{accent}" font-size="13" font-weight="600">{line}</text>
+  {art}
+  <text x="44" y="40" fill="{muted}" font-size="11">{status}</text>
+  <text x="44" y="56" fill="{accent}" font-size="13" font-weight="600">{line}</text>
   <title>{tip}</title>
 </g>"##,
         x = x,
@@ -310,7 +322,7 @@ fn render_lastfm(track: &RecentTrack, theme: &Theme, x: f64, y: f64, w: f64) -> 
         title = theme.title,
         w = w,
         card = theme.card,
-        pulse = pulse,
+        art = art,
         muted = theme.muted,
         status = escape_xml(status),
         accent = theme.accent,
