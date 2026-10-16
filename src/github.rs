@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::error::{AppError, Result};
 
 const GITHUB_GRAPHQL: &str = "https://api.github.com/graphql";
+pub const DEFAULT_SNAPSHOT_URL: &str =
+    "https://hdmain.github.io/ghcamos/github-stats.json";
 
 #[derive(Debug, Clone)]
 pub struct LanguageStat {
@@ -37,6 +39,72 @@ pub struct UserStats {
     pub reviews: u32,
     pub languages: Vec<LanguageStat>,
     pub top_repos: Vec<RepoStat>,
+}
+
+/// Previous render snapshot for ↑/↓ arrows on the stats grid.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct StatsSnapshot {
+    pub commits: u32,
+    pub pull_requests: u32,
+    pub issues: u32,
+    pub reviews: u32,
+    pub total_stars: u32,
+    pub followers: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Trend {
+    Up,
+    Down,
+    Flat,
+}
+
+impl UserStats {
+    pub fn snapshot(&self) -> StatsSnapshot {
+        StatsSnapshot {
+            commits: self.commits,
+            pull_requests: self.pull_requests,
+            issues: self.issues,
+            reviews: self.reviews,
+            total_stars: self.total_stars,
+            followers: self.followers,
+        }
+    }
+
+    pub fn trends(&self, prev: Option<&StatsSnapshot>) -> [Trend; 6] {
+        let Some(p) = prev else {
+            return [Trend::Flat; 6];
+        };
+        [
+            trend(self.commits, p.commits),
+            trend(self.pull_requests, p.pull_requests),
+            trend(self.issues, p.issues),
+            trend(self.reviews, p.reviews),
+            trend(self.total_stars, p.total_stars),
+            trend(self.followers, p.followers),
+        ]
+    }
+}
+
+fn trend(now: u32, prev: u32) -> Trend {
+    match now.cmp(&prev) {
+        std::cmp::Ordering::Greater => Trend::Up,
+        std::cmp::Ordering::Less => Trend::Down,
+        std::cmp::Ordering::Equal => Trend::Flat,
+    }
+}
+
+pub async fn fetch_stats_snapshot(url: &str) -> Option<StatsSnapshot> {
+    let client = Client::builder()
+        .user_agent("ghcamos/0.1 (+https://github.com/hdmain/ghcamos)")
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .ok()?;
+    let resp = client.get(url).send().await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    resp.json::<StatsSnapshot>().await.ok()
 }
 
 #[derive(Debug, Deserialize)]

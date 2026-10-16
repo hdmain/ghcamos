@@ -2,7 +2,7 @@ use chrono::Utc;
 
 use crate::bg::{self, Period};
 use crate::fire::{self, render_corner_fires};
-use crate::github::UserStats;
+use crate::github::{Trend, UserStats};
 use crate::homelab::{self, HomelabHistory, HomelabStats};
 use crate::lastfm::RecentTrack;
 use crate::theme::Theme;
@@ -16,6 +16,7 @@ pub fn render_stats_card(
     lastfm: Option<&RecentTrack>,
     homelab: Option<&HomelabStats>,
     homelab_history: Option<&HomelabHistory>,
+    trends: [Trend; 6],
 ) -> String {
     let width = width.clamp(360, 1600);
     let pad = 24.0;
@@ -49,7 +50,7 @@ pub fn render_stats_card(
     sections.push_str(&render_header(stats, theme, pad, y, inner_w));
     y += header_h + gap;
 
-    sections.push_str(&render_stat_grid(stats, theme, pad, y, inner_w, stats_h));
+    sections.push_str(&render_stat_grid(stats, theme, pad, y, inner_w, stats_h, trends));
     y += stats_h + gap;
 
     if !stats.languages.is_empty() {
@@ -163,6 +164,7 @@ fn render_stat_grid(
     y: f64,
     w: f64,
     h: f64,
+    trends: [Trend; 6],
 ) -> String {
     let cells = [
         ("Commits", format_num(stats.commits)),
@@ -187,11 +189,12 @@ fn render_stat_grid(
         let cx = col as f64 * (cell_w + gap);
         let cy = row as f64 * (cell_h + gap);
         let delay = 0.12 + i as f64 * 0.06;
+        let arrow = trend_arrow(trends[i]);
         out.push_str(&format!(
             r##"<g class="fade-in" style="animation-delay:{delay:.2}s" transform="translate({cx:.1},{cy:.1})">
   <rect width="{cell_w:.1}" height="{cell_h:.1}" rx="8" fill="{card}"/>
   <text x="12" y="20" fill="{muted}" font-size="12">{label}</text>
-  <text x="12" y="42" fill="{title}" font-size="20" font-weight="600">{value}</text>
+  <text x="12" y="42" fill="{title}" font-size="20" font-weight="600">{value}{arrow}</text>
 </g>"##,
             delay = delay,
             cx = cx,
@@ -203,11 +206,24 @@ fn render_stat_grid(
             title = theme.title,
             label = label,
             value = value,
+            arrow = arrow,
         ));
     }
 
     out.push_str("</g>");
     out
+}
+
+fn trend_arrow(trend: Trend) -> String {
+    match trend {
+        Trend::Up => {
+            r##"<tspan fill="#3fb950" font-size="14" font-weight="700"> ↑</tspan>"##.to_string()
+        }
+        Trend::Down => {
+            r##"<tspan fill="#f85149" font-size="14" font-weight="700"> ↓</tspan>"##.to_string()
+        }
+        Trend::Flat => String::new(),
+    }
 }
 
 fn render_languages(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) -> String {

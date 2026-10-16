@@ -14,7 +14,9 @@ use clap::{Parser, Subcommand};
 
 use crate::bg::Period;
 use crate::error::{AppError, Result};
-use crate::github::{fetch_lifetime_contributions, fetch_user_stats};
+use crate::github::{
+    fetch_lifetime_contributions, fetch_stats_snapshot, fetch_user_stats, DEFAULT_SNAPSHOT_URL,
+};
 use crate::homelab::{
     fetch_homelab_history, fetch_homelab_stats, DEFAULT_HISTORY_URL, DEFAULT_URL as HOMELAB_DEFAULT_URL,
 };
@@ -81,6 +83,10 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         no_homelab: bool,
 
+        /// Previous GitHub stats snapshot JSON (for ↑/↓ arrows)
+        #[arg(long, default_value = DEFAULT_SNAPSHOT_URL, env = "GITHUB_STATS_SNAPSHOT_URL")]
+        stats_snapshot_url: String,
+
         /// GitHub token (or set GH_TOKEN / GITHUB_TOKEN)
         #[arg(long, env = "GH_TOKEN")]
         token: Option<String>,
@@ -111,6 +117,7 @@ async fn run() -> Result<()> {
             homelab_url,
             homelab_history_url,
             no_homelab,
+            stats_snapshot_url,
             token,
         } => {
             let token = resolve_token(token)?;
@@ -141,6 +148,14 @@ async fn run() -> Result<()> {
                     eprintln!("github-lifetime omitted (keeping last-year totals): {err}");
                 }
             }
+
+            let prev_snapshot = fetch_stats_snapshot(&stats_snapshot_url).await;
+            if prev_snapshot.is_some() {
+                eprintln!("stats-snapshot: loaded previous totals for trends");
+            } else {
+                eprintln!("stats-snapshot: none (first run or fetch failed) - flat arrows");
+            }
+            let trends = stats.trends(prev_snapshot.as_ref());
 
             // Optional boxes: on error / empty → section is simply not rendered.
             let lastfm = if no_lastfm {
@@ -217,6 +232,7 @@ async fn run() -> Result<()> {
                 lastfm.as_ref(),
                 homelab.as_ref(),
                 homelab_history.as_ref(),
+                trends,
             );
             match out {
                 Some(path) => {
@@ -227,11 +243,15 @@ async fn run() -> Result<()> {
                     }
                     std::fs::write(&path, svg.as_bytes())?;
                     eprintln!("wrote {}", path.display());
+                    let out_dir = path
+                        .parent()
+                        .unwrap_or_else(|| std::path::Path::new("."));
+                    let snap_path = out_dir.join("github-stats.json");
+                    let snap_json = serde_json::to_string_pretty(&stats.snapshot())?;
+                    std::fs::write(&snap_path, snap_json)?;
+                    eprintln!("wrote {}", snap_path.display());
                     if let Some(history) = homelab_history.as_ref() {
-                        let hist_path = path
-                            .parent()
-                            .unwrap_or_else(|| std::path::Path::new("."))
-                            .join("homelab-history.json");
+                        let hist_path = out_dir.join("homelab-history.json");
                         let json = serde_json::to_string_pretty(history)?;
                         std::fs::write(&hist_path, json)?;
                         eprintln!("wrote {}", hist_path.display());
