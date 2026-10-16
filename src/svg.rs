@@ -58,34 +58,18 @@ pub fn render_stats_card(stats: &UserStats, theme: &Theme, width: u32) -> String
   <style>
     text {{ font-family: 'Segoe UI', Helvetica, Arial, sans-serif; }}
     image {{ image-rendering: pixelated; image-rendering: crisp-edges; }}
-    @keyframes fadeUp {{
-      from {{ opacity: 0; transform: translateY(8px); }}
-      to {{ opacity: 1; transform: translateY(0); }}
-    }}
+    /* Opacity-only: CSS transform would override SVG transform="" and break layout. */
     @keyframes fadeIn {{
       from {{ opacity: 0; }}
       to {{ opacity: 1; }}
-    }}
-    @keyframes growX {{
-      from {{ transform: scaleX(0); }}
-      to {{ transform: scaleX(1); }}
     }}
     @keyframes softPulse {{
       0%, 100% {{ opacity: 0.35; }}
       50% {{ opacity: 0.85; }}
     }}
-    .fade-up {{
-      opacity: 0;
-      animation: fadeUp 0.55s ease-out forwards;
-    }}
     .fade-in {{
       opacity: 0;
-      animation: fadeIn 0.7s ease-out forwards;
-    }}
-    .bar-fill {{
-      transform-origin: left center;
-      transform-box: fill-box;
-      animation: growX 0.85s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      animation: fadeIn 0.55s ease-out forwards;
     }}
     .accent-line {{
       animation: softPulse 2.8s ease-in-out infinite;
@@ -120,7 +104,7 @@ fn render_header(stats: &UserStats, theme: &Theme, x: f64, y: f64, _w: f64) -> S
     let member = format_member_since(&stats.created_at);
 
     format!(
-        r##"<g class="fade-up" style="animation-delay:0.05s" transform="translate({x:.1},{y:.1})">
+        r##"<g class="fade-in" style="animation-delay:0.05s" transform="translate({x:.1},{y:.1})">
   <text x="0" y="20" fill="{title}" font-size="20" font-weight="600">{display}</text>
   <text x="0" y="42" fill="{muted}" font-size="13">@{login} · Member since {member} · {years} on GitHub</text>
 </g>"##,
@@ -167,7 +151,7 @@ fn render_stat_grid(
         let cy = row as f64 * (cell_h + gap);
         let delay = 0.12 + i as f64 * 0.06;
         out.push_str(&format!(
-            r##"<g class="fade-up" style="animation-delay:{delay:.2}s" transform="translate({cx:.1},{cy:.1})">
+            r##"<g class="fade-in" style="animation-delay:{delay:.2}s" transform="translate({cx:.1},{cy:.1})">
   <rect width="{cell_w:.1}" height="{cell_h:.1}" rx="8" fill="{card}"/>
   <text x="12" y="20" fill="{muted}" font-size="12">{label}</text>
   <text x="12" y="42" fill="{title}" font-size="20" font-weight="600">{value}</text>
@@ -193,7 +177,7 @@ fn render_languages(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) ->
     let total: u64 = stats.languages.iter().map(|l| l.bytes).sum::<u64>().max(1);
     let bar_w = w;
     let mut out = format!(
-        r##"<g class="fade-up" style="animation-delay:0.45s" transform="translate({x:.1},{y:.1})">
+        r##"<g class="fade-in" style="animation-delay:0.45s" transform="translate({x:.1},{y:.1})">
   <text x="0" y="14" fill="{title}" font-size="14" font-weight="600">Top languages</text>
 "##,
         x = x,
@@ -206,11 +190,12 @@ fn render_languages(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) ->
         let pct = lang.bytes as f64 / total as f64;
         let fill_w = (bar_w * pct).max(2.0);
         let bar_delay = 0.55 + i as f64 * 0.08;
+        // SMIL width grow only — no CSS transform on positioned elements.
         out.push_str(&format!(
             r##"<text x="0" y="{label_y:.1}" fill="{text}" font-size="12">{name}</text>
 <text x="{bar_w:.1}" y="{label_y:.1}" fill="{muted}" font-size="12" text-anchor="end">{pct:.0}%</text>
 <rect x="0" y="{track_y:.1}" width="{bar_w:.1}" height="6" rx="3" fill="{track}"/>
-<rect class="bar-fill" style="animation-delay:{bar_delay:.2}s" x="0" y="{track_y:.1}" width="{fill_w:.1}" height="6" rx="3" fill="{color}">
+<rect x="0" y="{track_y:.1}" width="0" height="6" rx="3" fill="{color}">
   <animate attributeName="width" from="0" to="{fill_w:.1}" dur="0.85s" begin="{bar_delay:.2}s" fill="freeze" calcMode="spline" keySplines="0.22 1 0.36 1" keyTimes="0;1"/>
 </rect>
 "##,
@@ -236,7 +221,7 @@ fn render_languages(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) ->
 fn render_repos(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) -> String {
     let mut out = format!(
         r##"<g transform="translate({x:.1},{y:.1})">
-  <text class="fade-up" style="animation-delay:0.7s" x="0" y="14" fill="{title}" font-size="14" font-weight="600">Top repositories</text>
+  <text class="fade-in" style="animation-delay:0.7s" x="0" y="14" fill="{title}" font-size="14" font-weight="600">Top repositories</text>
 "##,
         x = x,
         y = y,
@@ -248,7 +233,7 @@ fn render_repos(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) -> Str
         let lang = repo.language.as_deref().unwrap_or("—");
         let delay = 0.78 + i as f64 * 0.08;
         out.push_str(&format!(
-            r##"<g class="fade-up" style="animation-delay:{delay:.2}s">
+            r##"<g class="fade-in" style="animation-delay:{delay:.2}s">
   <rect x="0" y="{ry:.1}" width="{w:.1}" height="24" rx="6" fill="{card}"/>
   <text x="10" y="{ty:.1}" fill="{accent}" font-size="13" font-weight="600">{name}</text>
   <text x="{mx:.1}" y="{ty:.1}" fill="{muted}" font-size="12" text-anchor="end">★ {stars} · {lang}</text>
