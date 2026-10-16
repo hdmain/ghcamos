@@ -44,6 +44,7 @@ jobs:
           LASTFM_USER: hdmain
           # Optional: https://www.last.fm/api/account/create — fallback works without it.
           LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          HOMELAB_STATS_URL: https://homelabstats.alfahost.eu/stats
         run: |
           mkdir -p dist
           ./target/release/ghcamos render \
@@ -51,6 +52,7 @@ jobs:
             --theme "${GHCAMOS_THEME}" \
             --width "${GHCAMOS_WIDTH}" \
             --lastfm-user "${LASTFM_USER}" \
+            --homelab-url "${HOMELAB_STATS_URL}" \
             --out dist/stats.svg
           cp dist/stats.svg dist/index.svg
           cat > dist/index.html <<'EOF'

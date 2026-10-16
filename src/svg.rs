@@ -3,6 +3,7 @@ use chrono::Utc;
 use crate::bg::{self, Period};
 use crate::fire::{self, render_corner_fires};
 use crate::github::UserStats;
+use crate::homelab::{self, HomelabStats};
 use crate::lastfm::RecentTrack;
 use crate::theme::Theme;
 
@@ -13,6 +14,7 @@ pub fn render_stats_card(
     period: Period,
     show_fires: bool,
     lastfm: Option<&RecentTrack>,
+    homelab: Option<&HomelabStats>,
 ) -> String {
     let width = width.clamp(360, 1600);
     let pad = 24.0;
@@ -32,6 +34,7 @@ pub fn render_stats_card(
     };
     let footer_h = 28.0;
     let lastfm_h = if lastfm.is_some() { 64.0 } else { 0.0 };
+    let homelab_h = if homelab.is_some() { 118.0 } else { 0.0 };
     let fire_h = if show_fires {
         fire::display_height() * 0.55
     } else {
@@ -56,6 +59,11 @@ pub fn render_stats_card(
     if !stats.top_repos.is_empty() {
         sections.push_str(&render_repos(stats, theme, pad, y, inner_w));
         y += repos_h + gap;
+    }
+
+    if let Some(host) = homelab {
+        sections.push_str(&render_homelab(host, theme, pad, y, inner_w));
+        y += homelab_h + gap;
     }
 
     if let Some(track) = lastfm {
@@ -277,6 +285,71 @@ fn render_repos(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) -> Str
 
     out.push_str("</g>");
     out
+}
+
+fn render_homelab(host: &HomelabStats, theme: &Theme, x: f64, y: f64, w: f64) -> String {
+    let temp = host
+        .package_temp_c()
+        .map(|t| format!("{t:.0}°C"))
+        .unwrap_or_else(|| "—".into());
+    let mem = format!(
+        "{} / {}",
+        homelab::format_bytes(host.memory.used_bytes),
+        homelab::format_bytes(host.memory.total_bytes)
+    );
+    let cells = [
+        ("CPU", format!("{:.0}%", host.cpu.usage_pct)),
+        ("RAM", format!("{:.0}%", host.mem_used_pct())),
+        ("Disk", format!("{:.0}%", host.disk.used_pct)),
+        ("Temp", temp),
+        ("Load", format!("{:.2}", host.loadavg[0])),
+        ("Up", host.uptime_human()),
+    ];
+
+    let cols = 3usize;
+    let gap = 8.0;
+    let cell_w = (w - gap * (cols as f64 - 1.0)) / cols as f64;
+    let cell_h = 36.0;
+
+    let mut grid = String::new();
+    for (i, (label, value)) in cells.iter().enumerate() {
+        let col = i % cols;
+        let row = i / cols;
+        let cx = col as f64 * (cell_w + gap);
+        let cy = 28.0 + row as f64 * (cell_h + gap);
+        grid.push_str(&format!(
+            r##"<g transform="translate({cx:.1},{cy:.1})">
+  <rect width="{cell_w:.1}" height="{cell_h:.1}" rx="7" fill="{card}"/>
+  <text x="10" y="14" fill="{muted}" font-size="10">{label}</text>
+  <text x="10" y="28" fill="{title}" font-size="13" font-weight="600">{value}</text>
+</g>"##,
+            cx = cx,
+            cy = cy,
+            cell_w = cell_w,
+            cell_h = cell_h,
+            card = theme.card,
+            muted = theme.muted,
+            title = theme.title,
+            label = label,
+            value = escape_xml(value),
+        ));
+    }
+
+    format!(
+        r##"<g class="fade-in" style="animation-delay:0.8s" transform="translate({x:.1},{y:.1})">
+  <text x="0" y="14" fill="{title}" font-size="14" font-weight="600">Homelab</text>
+  <text x="{w:.1}" y="14" fill="{muted}" font-size="11" text-anchor="end">{cores} cores · {mem}</text>
+  {grid}
+</g>"##,
+        x = x,
+        y = y,
+        title = theme.title,
+        w = w,
+        muted = theme.muted,
+        cores = host.cpu.cores,
+        mem = escape_xml(&mem),
+        grid = grid,
+    )
 }
 
 fn render_lastfm(track: &RecentTrack, theme: &Theme, x: f64, y: f64, w: f64) -> String {

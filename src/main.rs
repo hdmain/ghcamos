@@ -2,6 +2,7 @@ mod bg;
 mod error;
 mod fire;
 mod github;
+mod homelab;
 mod lastfm;
 mod svg;
 mod theme;
@@ -13,6 +14,7 @@ use clap::{Parser, Subcommand};
 use crate::bg::Period;
 use crate::error::{AppError, Result};
 use crate::github::{fetch_lifetime_contributions, fetch_user_stats};
+use crate::homelab::{fetch_homelab_stats, DEFAULT_URL as HOMELAB_DEFAULT_URL};
 use crate::lastfm::fetch_recent_track;
 use crate::svg::render_stats_card;
 use crate::theme::parse_theme;
@@ -64,6 +66,14 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         no_lastfm: bool,
 
+        /// Homelab stats URL (ghcamos-host JSON)
+        #[arg(long, default_value = HOMELAB_DEFAULT_URL, env = "HOMELAB_STATS_URL")]
+        homelab_url: String,
+
+        /// Skip homelab section
+        #[arg(long, default_value_t = false)]
+        no_homelab: bool,
+
         /// GitHub token (or set GH_TOKEN / GITHUB_TOKEN)
         #[arg(long, env = "GH_TOKEN")]
         token: Option<String>,
@@ -91,6 +101,8 @@ async fn run() -> Result<()> {
             lastfm_user,
             lastfm_api_key,
             no_lastfm,
+            homelab_url,
+            no_homelab,
             token,
         } => {
             let token = resolve_token(token)?;
@@ -130,8 +142,37 @@ async fn run() -> Result<()> {
                 }
             };
 
+            let homelab = if no_homelab {
+                None
+            } else {
+                match fetch_homelab_stats(&homelab_url).await {
+                    Ok(h) => {
+                        eprintln!(
+                            "homelab={} cpu={:.0}% mem={:.0}% disk={:.0}%",
+                            h.label,
+                            h.cpu.usage_pct,
+                            h.mem_used_pct(),
+                            h.disk.used_pct
+                        );
+                        Some(h)
+                    }
+                    Err(err) => {
+                        eprintln!("homelab skipped: {err}");
+                        None
+                    }
+                }
+            };
+
             eprintln!("period={} fires={fires}", period.as_str());
-            let svg = render_stats_card(&stats, &theme, width, period, fires, lastfm.as_ref());
+            let svg = render_stats_card(
+                &stats,
+                &theme,
+                width,
+                period,
+                fires,
+                lastfm.as_ref(),
+                homelab.as_ref(),
+            );
             match out {
                 Some(path) => {
                     if let Some(parent) = path.parent() {

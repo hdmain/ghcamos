@@ -37,6 +37,8 @@ cargo run --release -- render --user hdmain --out stats.svg
 | `--lastfm-user` | `hdmain` | Last.fm username ([profile](https://www.last.fm/user/hdmain)) |
 | `--lastfm-api-key` | `LASTFM_API_KEY` | optional; without it a public widget fallback is used |
 | `--no-lastfm` | off | hide the Last.fm section |
+| `--homelab-url` | `https://homelabstats.alfahost.eu/stats` | ghcamos-host JSON endpoint |
+| `--no-homelab` | off | hide the Homelab section |
 | `--width` | `680` | 360–1600 |
 | `--out` / `-o` | stdout | output path |
 | `--token` | `GH_TOKEN` / `GITHUB_TOKEN` | PAT or Actions token |
@@ -61,6 +63,17 @@ One-time setup:
 - Lifetime stats: commits, PRs, issues, reviews, owned stars, followers
 - Top languages (by bytes across owned non-fork repos)
 - Top 3 owned repos by stars
+- Homelab host stats from [homelabstats.alfahost.eu](https://homelabstats.alfahost.eu/stats) (CPU / RAM / disk / temp / load / uptime)
 - Last.fm now-playing / last-played ([hdmain](https://www.last.fm/user/hdmain))
 - Optional pixel fire corners (`--fires`) from [Devkidd — Pixel Fire Asset Pack v1.2](https://devkidd.itch.io/pixel-fire-asset-pack)
 - Footer with render timestamp
+
+### Homelab agent (`ghcamos-host`)
+
+On the Linux box:
+
+```bash
+cargo build --release --bin ghcamos-host
+./target/release/ghcamos-host --listen 0.0.0.0:7428 --label host
+# expose via reverse proxy → https://homelabstats.alfahost.eu/stats
+```

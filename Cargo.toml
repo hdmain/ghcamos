@@ -5,6 +5,15 @@ edition = "2021"
 description = "Self-contained GitHub stats SVG cards for profile READMEs"
 license = "MIT"
 readme = "README.md"
+default-run = "ghcamos"
+
+[[bin]]
+name = "ghcamos"
+path = "src/main.rs"
+
+[[bin]]
+name = "ghcamos-host"
+path = "src/bin/ghcamos-host.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }
@@ -16,6 +25,9 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 chrono-tz = "0.10"
 thiserror = "2"
 base64 = "0.22"
+sysinfo = "0.33"
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
+tower-http = { version = "0.6", features = ["cors"] }
 
 [profile.release]
 lto = true
