@@ -44,17 +44,20 @@ struct ApiRecentTracks {
 }
 
 pub async fn fetch_recent_track(user: &str, api_key: Option<&str>) -> Result<Option<RecentTrack>> {
+    // Prefer official API when keyed; always allow widget fallback without surfacing errors to SVG.
     if let Some(key) = api_key.filter(|k| !k.is_empty()) {
         match fetch_via_api(user, key).await {
-            Ok(track) => return Ok(track),
+            Ok(Some(track)) => return Ok(Some(track)),
+            Ok(None) => { /* fall through to widget */ }
             Err(err) => {
                 eprintln!("lastfm api: {err}; trying fallback");
             }
         }
-    } else {
-        eprintln!("lastfm: no LASTFM_API_KEY; using fallback widget");
     }
-    fetch_via_fallback_svg(user).await
+    match fetch_via_fallback_svg(user).await {
+        Ok(track) => Ok(track),
+        Err(err) => Err(err),
+    }
 }
 
 async fn fetch_via_api(user: &str, api_key: &str) -> Result<Option<RecentTrack>> {

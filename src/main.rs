@@ -4,6 +4,7 @@ mod fire;
 mod github;
 mod homelab;
 mod lastfm;
+mod retry;
 mod svg;
 mod theme;
 
@@ -112,31 +113,47 @@ async fn run() -> Result<()> {
                     "unknown period `{period}`; expected auto|morning|day|night"
                 ))
             })?;
-            let mut stats = fetch_user_stats(&token, &user).await?;
-            let (commits, prs, issues, reviews) =
-                fetch_lifetime_contributions(&token, &user, &stats.created_at).await?;
-            stats.commits = commits;
-            stats.pull_requests = prs;
-            stats.issues = issues;
-            stats.reviews = reviews;
+            // GitHub profile is required for the card shell; optional sections hide on failure.
+            let mut stats = crate::retry::with_retry(3, "github", || {
+                fetch_user_stats(&token, &user)
+            })
+            .await?;
 
+            match crate::retry::with_retry(3, "github-lifetime", || {
+                fetch_lifetime_contributions(&token, &user, &stats.created_at)
+            })
+            .await
+            {
+                Ok((commits, prs, issues, reviews)) => {
+                    stats.commits = commits;
+                    stats.pull_requests = prs;
+                    stats.issues = issues;
+                    stats.reviews = reviews;
+                }
+                Err(err) => {
+                    eprintln!("github-lifetime omitted (keeping last-year totals): {err}");
+                }
+            }
+
+            // Optional boxes: on error / empty → section is simply not rendered.
             let lastfm = if no_lastfm {
                 None
             } else {
-                match fetch_recent_track(&lastfm_user, lastfm_api_key.as_deref()).await {
-                    Ok(track) => {
-                        if let Some(ref t) = track {
-                            eprintln!(
-                                "lastfm={} - {} · {}",
-                                t.label(),
-                                t.artist,
-                                t.name
-                            );
-                        }
-                        track
+                match crate::retry::with_retry(3, "lastfm", || {
+                    fetch_recent_track(&lastfm_user, lastfm_api_key.as_deref())
+                })
+                .await
+                {
+                    Ok(Some(t)) => {
+                        eprintln!("lastfm={} - {} · {}", t.label(), t.artist, t.name);
+                        Some(t)
+                    }
+                    Ok(None) => {
+                        eprintln!("lastfm omitted: no recent track");
+                        None
                     }
                     Err(err) => {
-                        eprintln!("lastfm skipped: {err}");
+                        eprintln!("lastfm omitted: {err}");
                         None
                     }
                 }
@@ -145,7 +162,11 @@ async fn run() -> Result<()> {
             let homelab = if no_homelab {
                 None
             } else {
-                match fetch_homelab_stats(&homelab_url).await {
+                match crate::retry::with_retry(3, "homelab", || {
+                    fetch_homelab_stats(&homelab_url)
+                })
+                .await
+                {
                     Ok(h) => {
                         eprintln!(
                             "homelab={} cpu={:.0}% mem={:.0}% disk={:.0}%",
@@ -157,7 +178,7 @@ async fn run() -> Result<()> {
                         Some(h)
                     }
                     Err(err) => {
-                        eprintln!("homelab skipped: {err}");
+                        eprintln!("homelab omitted: {err}");
                         None
                     }
                 }

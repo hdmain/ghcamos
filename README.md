@@ -47,6 +47,8 @@ Optional: create a free [Last.fm API key](https://www.last.fm/api/account/create
 
 Pixel sky backgrounds live in [`bgs/`](bgs/) (`mornig`, `day`, `night`) as stacked layers (`1.png` sky + drifting clouds). Cron every 15m picks the period from Warsaw local time; cloud layers slowly scroll via SMIL.
 
+Optional sections (Homelab, Last.fm) **retry 3×** then disappear from the card if the API is still down — no error placeholders.
+
 ## GitHub Actions
 
 Workflow [`.github/workflows/render.yml`](.github/workflows/render.yml) builds, renders `dist/stats.svg`, and deploys to GitHub Pages every 15 minutes (plus on push / manual dispatch).
