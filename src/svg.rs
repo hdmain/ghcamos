@@ -3,6 +3,7 @@ use chrono::Utc;
 use crate::bg::{self, Period};
 use crate::fire::{self, render_corner_fires};
 use crate::github::UserStats;
+use crate::lastfm::RecentTrack;
 use crate::theme::Theme;
 
 pub fn render_stats_card(
@@ -11,6 +12,7 @@ pub fn render_stats_card(
     width: u32,
     period: Period,
     show_fires: bool,
+    lastfm: Option<&RecentTrack>,
 ) -> String {
     let width = width.clamp(360, 1600);
     let pad = 24.0;
@@ -29,6 +31,7 @@ pub fn render_stats_card(
         28.0 + stats.top_repos.len() as f64 * 28.0
     };
     let footer_h = 28.0;
+    let lastfm_h = if lastfm.is_some() { 64.0 } else { 0.0 };
     let fire_h = if show_fires {
         fire::display_height() * 0.55
     } else {
@@ -53,6 +56,11 @@ pub fn render_stats_card(
     if !stats.top_repos.is_empty() {
         sections.push_str(&render_repos(stats, theme, pad, y, inner_w));
         y += repos_h + gap;
+    }
+
+    if let Some(track) = lastfm {
+        sections.push_str(&render_lastfm(track, theme, pad, y, inner_w));
+        y += lastfm_h + gap;
     }
 
     let footer = render_footer(theme, pad, y, inner_w, period, show_fires);
@@ -269,6 +277,67 @@ fn render_repos(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) -> Str
 
     out.push_str("</g>");
     out
+}
+
+fn render_lastfm(track: &RecentTrack, theme: &Theme, x: f64, y: f64, w: f64) -> String {
+    let status = track.label();
+    let line = truncate_chars(&format!("{} — {}", track.artist, track.name), 52);
+    let album = track
+        .album
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| truncate_chars(s, 48))
+        .unwrap_or_default();
+    let pulse = if track.now_playing {
+        r##"<circle cx="14" cy="34" r="4" fill="#1db954">
+  <animate attributeName="opacity" values="1;0.35;1" dur="1.4s" repeatCount="indefinite"/>
+</circle>"##
+    } else {
+        r##"<circle cx="14" cy="34" r="4" fill="#8b949e"/>"##
+    };
+
+    format!(
+        r##"<g class="fade-in" style="animation-delay:0.85s" transform="translate({x:.1},{y:.1})">
+  <text x="0" y="14" fill="{title}" font-size="14" font-weight="600">Last.fm</text>
+  <rect x="0" y="22" width="{w:.1}" height="40" rx="8" fill="{card}"/>
+  {pulse}
+  <text x="28" y="38" fill="{muted}" font-size="11">{status}</text>
+  <text x="28" y="54" fill="{accent}" font-size="13" font-weight="600">{line}</text>
+  <title>{tip}</title>
+</g>"##,
+        x = x,
+        y = y,
+        title = theme.title,
+        w = w,
+        card = theme.card,
+        pulse = pulse,
+        muted = theme.muted,
+        status = escape_xml(status),
+        accent = theme.accent,
+        line = escape_xml(&line),
+        tip = escape_xml(&format!(
+            "{}: {} — {}{}",
+            status,
+            track.artist,
+            track.name,
+            if album.is_empty() {
+                String::new()
+            } else {
+                format!(" ({album})")
+            }
+        )),
+    )
+}
+
+fn truncate_chars(s: &str, max: usize) -> String {
+    let count = s.chars().count();
+    if count <= max {
+        s.to_string()
+    } else {
+        let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
+        out.push('…');
+        out
+    }
 }
 
 fn render_footer(

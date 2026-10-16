@@ -2,6 +2,7 @@ mod bg;
 mod error;
 mod fire;
 mod github;
+mod lastfm;
 mod svg;
 mod theme;
 
@@ -12,6 +13,7 @@ use clap::{Parser, Subcommand};
 use crate::bg::Period;
 use crate::error::{AppError, Result};
 use crate::github::{fetch_lifetime_contributions, fetch_user_stats};
+use crate::lastfm::fetch_recent_track;
 use crate::svg::render_stats_card;
 use crate::theme::parse_theme;
 
@@ -50,6 +52,18 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         fires: bool,
 
+        /// Last.fm username for recent / now-playing track
+        #[arg(long, default_value = "hdmain", env = "LASTFM_USER")]
+        lastfm_user: String,
+
+        /// Last.fm API key (optional; falls back to public widget scrape)
+        #[arg(long, env = "LASTFM_API_KEY")]
+        lastfm_api_key: Option<String>,
+
+        /// Skip Last.fm section
+        #[arg(long, default_value_t = false)]
+        no_lastfm: bool,
+
         /// GitHub token (or set GH_TOKEN / GITHUB_TOKEN)
         #[arg(long, env = "GH_TOKEN")]
         token: Option<String>,
@@ -74,6 +88,9 @@ async fn run() -> Result<()> {
             out,
             period,
             fires,
+            lastfm_user,
+            lastfm_api_key,
+            no_lastfm,
             token,
         } => {
             let token = resolve_token(token)?;
@@ -91,8 +108,30 @@ async fn run() -> Result<()> {
             stats.issues = issues;
             stats.reviews = reviews;
 
+            let lastfm = if no_lastfm {
+                None
+            } else {
+                match fetch_recent_track(&lastfm_user, lastfm_api_key.as_deref()).await {
+                    Ok(track) => {
+                        if let Some(ref t) = track {
+                            eprintln!(
+                                "lastfm={} — {} · {}",
+                                t.label(),
+                                t.artist,
+                                t.name
+                            );
+                        }
+                        track
+                    }
+                    Err(err) => {
+                        eprintln!("lastfm skipped: {err}");
+                        None
+                    }
+                }
+            };
+
             eprintln!("period={} fires={fires}", period.as_str());
-            let svg = render_stats_card(&stats, &theme, width, period, fires);
+            let svg = render_stats_card(&stats, &theme, width, period, fires, lastfm.as_ref());
             match out {
                 Some(path) => {
                     if let Some(parent) = path.parent() {

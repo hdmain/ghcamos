@@ -41,12 +41,16 @@ jobs:
         env:
           # Prefer optional STATS_GH_TOKEN (classic PAT) for private contribution counts.
           GH_TOKEN: ${{ secrets.STATS_GH_TOKEN != '' && secrets.STATS_GH_TOKEN || secrets.GITHUB_TOKEN }}
+          LASTFM_USER: hdmain
+          # Optional: https://www.last.fm/api/account/create — fallback works without it.
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
         run: |
           mkdir -p dist
           ./target/release/ghcamos render \
             --user "${GHCAMOS_USER}" \
             --theme "${GHCAMOS_THEME}" \
             --width "${GHCAMOS_WIDTH}" \
+            --lastfm-user "${LASTFM_USER}" \
             --out dist/stats.svg
           cp dist/stats.svg dist/index.svg
           cat > dist/index.html <<'EOF'
