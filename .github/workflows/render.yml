@@ -1,0 +1,85 @@
+name: Render and publish stats SVG
+
+on:
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  GHCAMOS_USER: hdmain
+  GHCAMOS_THEME: github_dark
+  GHCAMOS_WIDTH: "680"
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Render SVG
+        env:
+          # Prefer optional STATS_GH_TOKEN (classic PAT) for private contribution counts.
+          GH_TOKEN: ${{ secrets.STATS_GH_TOKEN != '' && secrets.STATS_GH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p dist
+          ./target/release/ghcamos render \
+            --user "${GHCAMOS_USER}" \
+            --theme "${GHCAMOS_THEME}" \
+            --width "${GHCAMOS_WIDTH}" \
+            --out dist/stats.svg
+          cp dist/stats.svg dist/index.svg
+          cat > dist/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8"/>
+            <title>ghcamos</title>
+            <style>
+              body { margin: 2rem; background: #0d1117; color: #c9d1d9; font-family: system-ui, sans-serif; }
+              img { max-width: 100%; height: auto; }
+            </style>
+          </head>
+          <body>
+            <h1>ghcamos</h1>
+            <p>Embed in your profile README:</p>
+            <pre>![Stats](https://hdmain.github.io/ghcamos/stats.svg)</pre>
+            <p><img src="stats.svg" alt="GitHub stats"/></p>
+          </body>
+          </html>
+          EOF
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: render
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

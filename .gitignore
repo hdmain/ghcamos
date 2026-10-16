@@ -1,0 +1,9 @@
+/target/
+/dist/
+stats.svg
+*.svg
+!docs/**
+.env
+.idea/
+.vscode/
+*.pdb

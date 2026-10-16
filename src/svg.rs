@@ -1,0 +1,278 @@
+use chrono::Utc;
+
+use crate::github::UserStats;
+use crate::theme::Theme;
+
+pub fn render_stats_card(stats: &UserStats, theme: &Theme, width: u32) -> String {
+    let width = width.clamp(360, 1600);
+    let pad = 24.0;
+    let inner_w = width as f64 - pad * 2.0;
+
+    let header_h = 52.0;
+    let stats_h = 120.0;
+    let langs_h = if stats.languages.is_empty() {
+        0.0
+    } else {
+        28.0 + stats.languages.len() as f64 * 28.0
+    };
+    let repos_h = if stats.top_repos.is_empty() {
+        0.0
+    } else {
+        28.0 + stats.top_repos.len() as f64 * 28.0
+    };
+    let footer_h = 28.0;
+    let gap = 16.0;
+
+    let mut y = pad;
+    let mut sections = String::new();
+
+    sections.push_str(&render_header(stats, theme, pad, y, inner_w));
+    y += header_h + gap;
+
+    sections.push_str(&render_stat_grid(stats, theme, pad, y, inner_w, stats_h));
+    y += stats_h + gap;
+
+    if !stats.languages.is_empty() {
+        sections.push_str(&render_languages(stats, theme, pad, y, inner_w));
+        y += langs_h + gap;
+    }
+
+    if !stats.top_repos.is_empty() {
+        sections.push_str(&render_repos(stats, theme, pad, y, inner_w));
+        y += repos_h + gap;
+    }
+
+    let footer = render_footer(theme, pad, y, inner_w);
+    y += footer_h;
+
+    let height = (y + pad).ceil() as u32;
+
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="{login} GitHub stats">
+  <title>{login} GitHub stats</title>
+  <style>
+    text {{ font-family: 'Segoe UI', Helvetica, Arial, sans-serif; }}
+  </style>
+  <rect width="{width}" height="{height}" rx="12" fill="{bg}" stroke="{border}" stroke-width="1"/>
+  {sections}
+  {footer}
+</svg>
+"##,
+        width = width,
+        height = height,
+        login = escape_xml(&stats.login),
+        bg = theme.bg,
+        border = theme.border,
+        sections = sections,
+        footer = footer,
+    )
+}
+
+fn render_header(stats: &UserStats, theme: &Theme, x: f64, y: f64, _w: f64) -> String {
+    let display = stats
+        .name
+        .as_deref()
+        .filter(|n| !n.is_empty())
+        .unwrap_or(&stats.login);
+    let years = years_on_github(&stats.created_at);
+    let member = format_member_since(&stats.created_at);
+
+    format!(
+        r##"<g transform="translate({x:.1},{y:.1})">
+  <text x="0" y="20" fill="{title}" font-size="20" font-weight="600">{display}</text>
+  <text x="0" y="42" fill="{muted}" font-size="13">@{login} · Member since {member} · {years} on GitHub</text>
+</g>"##,
+        x = x,
+        y = y,
+        title = theme.title,
+        muted = theme.muted,
+        display = escape_xml(display),
+        login = escape_xml(&stats.login),
+        member = escape_xml(&member),
+        years = escape_xml(&years),
+    )
+}
+
+fn render_stat_grid(
+    stats: &UserStats,
+    theme: &Theme,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+) -> String {
+    let cells = [
+        ("Commits", format_num(stats.commits)),
+        ("PRs", format_num(stats.pull_requests)),
+        ("Issues", format_num(stats.issues)),
+        ("Reviews", format_num(stats.reviews)),
+        ("Stars", format_num(stats.total_stars)),
+        ("Followers", format_num(stats.followers)),
+    ];
+
+    let cols = 3usize;
+    let rows = 2usize;
+    let gap = 10.0;
+    let cell_w = (w - gap * (cols as f64 - 1.0)) / cols as f64;
+    let cell_h = (h - gap * (rows as f64 - 1.0)) / rows as f64;
+
+    let mut out = format!(r#"<g transform="translate({x:.1},{y:.1})">"#);
+
+    for (i, (label, value)) in cells.iter().enumerate() {
+        let col = i % cols;
+        let row = i / cols;
+        let cx = col as f64 * (cell_w + gap);
+        let cy = row as f64 * (cell_h + gap);
+        out.push_str(&format!(
+            r##"<g transform="translate({cx:.1},{cy:.1})">
+  <rect width="{cell_w:.1}" height="{cell_h:.1}" rx="8" fill="{card}"/>
+  <text x="12" y="20" fill="{muted}" font-size="12">{label}</text>
+  <text x="12" y="42" fill="{title}" font-size="20" font-weight="600">{value}</text>
+</g>"##,
+            cx = cx,
+            cy = cy,
+            cell_w = cell_w,
+            cell_h = cell_h,
+            card = theme.card,
+            muted = theme.muted,
+            title = theme.title,
+            label = label,
+            value = value,
+        ));
+    }
+
+    out.push_str("</g>");
+    out
+}
+
+fn render_languages(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) -> String {
+    let total: u64 = stats.languages.iter().map(|l| l.bytes).sum::<u64>().max(1);
+    let bar_w = w;
+    let mut out = format!(
+        r##"<g transform="translate({x:.1},{y:.1})">
+  <text x="0" y="14" fill="{title}" font-size="14" font-weight="600">Top languages</text>
+"##,
+        x = x,
+        y = y,
+        title = theme.title,
+    );
+
+    let mut row_y = 34.0;
+    for lang in &stats.languages {
+        let pct = lang.bytes as f64 / total as f64;
+        let fill_w = (bar_w * pct).max(2.0);
+        out.push_str(&format!(
+            r##"<text x="0" y="{label_y:.1}" fill="{text}" font-size="12">{name}</text>
+<text x="{bar_w:.1}" y="{label_y:.1}" fill="{muted}" font-size="12" text-anchor="end">{pct:.0}%</text>
+<rect x="0" y="{track_y:.1}" width="{bar_w:.1}" height="6" rx="3" fill="{track}"/>
+<rect x="0" y="{track_y:.1}" width="{fill_w:.1}" height="6" rx="3" fill="{color}"/>
+"##,
+            label_y = row_y,
+            text = theme.text,
+            muted = theme.muted,
+            name = escape_xml(&lang.name),
+            bar_w = bar_w,
+            pct = pct * 100.0,
+            track_y = row_y + 6.0,
+            track = theme.bar_track,
+            fill_w = fill_w,
+            color = &lang.color,
+        ));
+        row_y += 28.0;
+    }
+
+    out.push_str("</g>");
+    out
+}
+
+fn render_repos(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) -> String {
+    let mut out = format!(
+        r##"<g transform="translate({x:.1},{y:.1})">
+  <text x="0" y="14" fill="{title}" font-size="14" font-weight="600">Top repositories</text>
+"##,
+        x = x,
+        y = y,
+        title = theme.title,
+    );
+
+    let mut row_y = 36.0;
+    for repo in &stats.top_repos {
+        let lang = repo.language.as_deref().unwrap_or("—");
+        out.push_str(&format!(
+            r##"<rect x="0" y="{ry:.1}" width="{w:.1}" height="24" rx="6" fill="{card}"/>
+<text x="10" y="{ty:.1}" fill="{accent}" font-size="13" font-weight="600">{name}</text>
+<text x="{mx:.1}" y="{ty:.1}" fill="{muted}" font-size="12" text-anchor="end">★ {stars} · {lang}</text>
+"##,
+            ry = row_y - 16.0,
+            w = w,
+            card = theme.card,
+            ty = row_y,
+            accent = theme.accent,
+            name = escape_xml(&repo.name),
+            mx = w - 10.0,
+            muted = theme.muted,
+            stars = repo.stars,
+            lang = escape_xml(lang),
+        ));
+        row_y += 28.0;
+    }
+
+    out.push_str("</g>");
+    out
+}
+
+fn render_footer(theme: &Theme, x: f64, y: f64, _w: f64) -> String {
+    let stamp = Utc::now().format("%Y-%m-%d UTC").to_string();
+    format!(
+        r##"<g transform="translate({x:.1},{y:.1})">
+  <text x="0" y="14" fill="{muted}" font-size="11">Updated {stamp} · ghcamos</text>
+</g>"##,
+        x = x,
+        y = y,
+        muted = theme.muted,
+        stamp = stamp,
+    )
+}
+
+fn format_num(n: u32) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 10_000 {
+        format!("{:.1}k", n as f64 / 1_000.0)
+    } else if n >= 1_000 {
+        format!("{:.1}k", n as f64 / 1_000.0)
+    } else {
+        n.to_string()
+    }
+}
+
+fn format_member_since(created_at: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(created_at)
+        .map(|d| d.format("%b %Y").to_string())
+        .unwrap_or_else(|_| created_at.to_string())
+}
+
+fn years_on_github(created_at: &str) -> String {
+    let Ok(created) = chrono::DateTime::parse_from_rfc3339(created_at) else {
+        return "—".into();
+    };
+    let days = (Utc::now() - created.with_timezone(&Utc)).num_days();
+    let years = (days as f64 / 365.25).floor() as i64;
+    if years < 1 {
+        let months = (days / 30).max(1);
+        format!("{months} mo")
+    } else if years == 1 {
+        "1 yr".into()
+    } else {
+        format!("{years} yrs")
+    }
+}
+
+fn escape_xml(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
