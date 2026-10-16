@@ -69,12 +69,12 @@ impl Period {
     }
 
     /// Scrim over the pixel art so stats stay readable.
+    /// Night stays mostly original — readability comes from outlined sky text.
     pub fn scrim(self) -> (&'static str, f64) {
         match self {
             Self::Morning => ("#1a1020", 0.62),
             Self::Day => ("#0d1117", 0.58),
-            // Night art is bright (stars/moon); need a heavier veil than day.
-            Self::Night => ("#010409", 0.78),
+            Self::Night => ("#0d1117", 0.18),
         }
     }
 

@@ -47,19 +47,19 @@ pub fn render_stats_card(
     let mut y = pad;
     let mut sections = String::new();
 
-    sections.push_str(&render_header(stats, theme, pad, y, inner_w));
+    sections.push_str(&render_header(stats, theme, pad, y, inner_w, period));
     y += header_h + gap;
 
     sections.push_str(&render_stat_grid(stats, theme, pad, y, inner_w, stats_h, trends));
     y += stats_h + gap;
 
     if !stats.languages.is_empty() {
-        sections.push_str(&render_languages(stats, theme, pad, y, inner_w));
+        sections.push_str(&render_languages(stats, theme, pad, y, inner_w, period));
         y += langs_h + gap;
     }
 
     if !stats.top_repos.is_empty() {
-        sections.push_str(&render_repos(stats, theme, pad, y, inner_w));
+        sections.push_str(&render_repos(stats, theme, pad, y, inner_w, period));
         y += repos_h + gap;
     }
 
@@ -71,12 +71,13 @@ pub fn render_stats_card(
             pad,
             y,
             inner_w,
+            period,
         ));
         y += homelab_h + gap;
     }
 
     if let Some(track) = lastfm {
-        sections.push_str(&render_lastfm(track, theme, pad, y, inner_w));
+        sections.push_str(&render_lastfm(track, theme, pad, y, inner_w, period));
         y += lastfm_h + gap;
     }
 
@@ -99,7 +100,7 @@ pub fn render_stats_card(
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="{login} GitHub stats">
   <title>{login} GitHub stats</title>
   <style>
-    text {{ font-family: 'Segoe UI', Helvetica, Arial, sans-serif; }}
+    text {{ font-family: {font_stack}; }}
     image {{ image-rendering: pixelated; image-rendering: crisp-edges; }}
     /* Opacity-only: CSS transform would override SVG transform="" and break layout. */
     @keyframes fadeIn {{
@@ -127,6 +128,7 @@ pub fn render_stats_card(
         width = width,
         height = height,
         login = escape_xml(&stats.login),
+        font_stack = font_stack(period),
         background = background,
         sections = sections,
         footer = footer,
@@ -134,7 +136,87 @@ pub fn render_stats_card(
     )
 }
 
-fn render_header(stats: &UserStats, theme: &Theme, x: f64, y: f64, _w: f64) -> String {
+fn font_stack(period: Period) -> &'static str {
+    match period {
+        // Harder glyph edges read better on busy night sky.
+        Period::Night => "'Trebuchet MS', 'Segoe UI', Helvetica, Arial, sans-serif",
+        _ => "'Segoe UI', Helvetica, Arial, sans-serif",
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SkyTone {
+    Title,
+    Muted,
+}
+
+/// Text sitting on the sky (not on a card). Night: bright fill + dark halo outline.
+fn sky_text(
+    x: &str,
+    y: &str,
+    theme: &Theme,
+    tone: SkyTone,
+    size: f64,
+    weight: &str,
+    body: &str,
+    period: Period,
+    extra: &str,
+) -> String {
+    let fill = match (period, tone) {
+        (Period::Night, SkyTone::Title) => "#ffffff",
+        (Period::Night, SkyTone::Muted) => "#e6edf3",
+        (_, SkyTone::Title) => theme.title,
+        (_, SkyTone::Muted) => theme.muted,
+    };
+    let weight = if period == Period::Night && weight.is_empty() {
+        "600"
+    } else {
+        weight
+    };
+    let weight_attr = if weight.is_empty() {
+        String::new()
+    } else {
+        format!(r#" font-weight="{weight}""#)
+    };
+    let extra = if extra.is_empty() {
+        String::new()
+    } else {
+        format!(" {extra}")
+    };
+    if period == Period::Night {
+        format!(
+            r##"<text x="{x}" y="{y}" fill="#010409" stroke="#010409" stroke-width="3.25" stroke-linejoin="round" font-size="{size}"{weight_attr}{extra}>{body}</text>
+<text x="{x}" y="{y}" fill="{fill}" font-size="{size}"{weight_attr}{extra}>{body}</text>"##,
+            x = x,
+            y = y,
+            size = size,
+            weight_attr = weight_attr,
+            extra = extra,
+            body = body,
+            fill = fill,
+        )
+    } else {
+        format!(
+            r##"<text x="{x}" y="{y}" fill="{fill}" font-size="{size}"{weight_attr}{extra}>{body}</text>"##,
+            x = x,
+            y = y,
+            fill = fill,
+            size = size,
+            weight_attr = weight_attr,
+            extra = extra,
+            body = body,
+        )
+    }
+}
+
+fn render_header(
+    stats: &UserStats,
+    theme: &Theme,
+    x: f64,
+    y: f64,
+    _w: f64,
+    period: Period,
+) -> String {
     let display = stats
         .name
         .as_deref()
@@ -142,20 +224,44 @@ fn render_header(stats: &UserStats, theme: &Theme, x: f64, y: f64, _w: f64) -> S
         .unwrap_or(&stats.login);
     let years = years_on_github(&stats.created_at);
     let member = format_member_since(&stats.created_at);
+    let subtitle = format!(
+        "@{} · Member since {} · {} on GitHub",
+        escape_xml(&stats.login),
+        escape_xml(&member),
+        escape_xml(&years),
+    );
+    let title = sky_text(
+        "0",
+        "20",
+        theme,
+        SkyTone::Title,
+        20.0,
+        "700",
+        &escape_xml(display),
+        period,
+        "",
+    );
+    let sub = sky_text(
+        "0",
+        "42",
+        theme,
+        SkyTone::Muted,
+        13.0,
+        "600",
+        &subtitle,
+        period,
+        "",
+    );
 
     format!(
         r##"<g class="fade-in" style="animation-delay:0.05s" transform="translate({x:.1},{y:.1})">
-  <text x="0" y="20" fill="{title}" font-size="20" font-weight="600">{display}</text>
-  <text x="0" y="42" fill="{muted}" font-size="13">@{login} · Member since {member} · {years} on GitHub</text>
+  {title}
+  {sub}
 </g>"##,
         x = x,
         y = y,
-        title = theme.title,
-        muted = theme.muted,
-        display = escape_xml(display),
-        login = escape_xml(&stats.login),
-        member = escape_xml(&member),
-        years = escape_xml(&years),
+        title = title,
+        sub = sub,
     )
 }
 
@@ -228,16 +334,34 @@ fn trend_arrow(trend: Trend) -> String {
     }
 }
 
-fn render_languages(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) -> String {
+fn render_languages(
+    stats: &UserStats,
+    theme: &Theme,
+    x: f64,
+    y: f64,
+    w: f64,
+    period: Period,
+) -> String {
     let total: u64 = stats.languages.iter().map(|l| l.bytes).sum::<u64>().max(1);
     let bar_w = w;
+    let heading = sky_text(
+        "0",
+        "14",
+        theme,
+        SkyTone::Title,
+        14.0,
+        "700",
+        "Top languages",
+        period,
+        "",
+    );
     let mut out = format!(
         r##"<g class="fade-in" style="animation-delay:0.45s" transform="translate({x:.1},{y:.1})">
-  <text x="0" y="14" fill="{title}" font-size="14" font-weight="600">Top languages</text>
+  {heading}
 "##,
         x = x,
         y = y,
-        title = theme.title,
+        heading = heading,
     );
 
     let mut row_y = 34.0;
@@ -245,21 +369,40 @@ fn render_languages(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) ->
         let pct = lang.bytes as f64 / total as f64;
         let fill_w = (bar_w * pct).max(2.0);
         let bar_delay = 0.55 + i as f64 * 0.08;
+        let name = sky_text(
+            "0",
+            &format!("{label_y:.1}", label_y = row_y),
+            theme,
+            SkyTone::Title,
+            12.0,
+            "600",
+            &escape_xml(&lang.name),
+            period,
+            "",
+        );
+        let pct_label = sky_text(
+            &format!("{bar_w:.1}", bar_w = bar_w),
+            &format!("{label_y:.1}", label_y = row_y),
+            theme,
+            SkyTone::Muted,
+            12.0,
+            "600",
+            &format!("{:.0}%", pct * 100.0),
+            period,
+            r#"text-anchor="end""#,
+        );
         // SMIL width grow only — no CSS transform on positioned elements.
         out.push_str(&format!(
-            r##"<text x="0" y="{label_y:.1}" fill="{text}" font-size="12">{name}</text>
-<text x="{bar_w:.1}" y="{label_y:.1}" fill="{muted}" font-size="12" text-anchor="end">{pct:.0}%</text>
+            r##"{name}
+{pct_label}
 <rect x="0" y="{track_y:.1}" width="{bar_w:.1}" height="6" rx="3" fill="{track}"/>
 <rect x="0" y="{track_y:.1}" width="0" height="6" rx="3" fill="{color}">
   <animate attributeName="width" from="0" to="{fill_w:.1}" dur="0.85s" begin="{bar_delay:.2}s" fill="freeze" calcMode="spline" keySplines="0.22 1 0.36 1" keyTimes="0;1"/>
 </rect>
 "##,
-            label_y = row_y,
-            text = theme.text,
-            muted = theme.muted,
-            name = escape_xml(&lang.name),
+            name = name,
+            pct_label = pct_label,
             bar_w = bar_w,
-            pct = pct * 100.0,
             track_y = row_y + 6.0,
             track = theme.bar_track,
             bar_delay = bar_delay,
@@ -273,14 +416,32 @@ fn render_languages(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) ->
     out
 }
 
-fn render_repos(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) -> String {
+fn render_repos(
+    stats: &UserStats,
+    theme: &Theme,
+    x: f64,
+    y: f64,
+    w: f64,
+    period: Period,
+) -> String {
+    let heading = sky_text(
+        "0",
+        "14",
+        theme,
+        SkyTone::Title,
+        14.0,
+        "700",
+        "Top repositories",
+        period,
+        r#"class="fade-in" style="animation-delay:0.7s""#,
+    );
     let mut out = format!(
         r##"<g transform="translate({x:.1},{y:.1})">
-  <text class="fade-in" style="animation-delay:0.7s" x="0" y="14" fill="{title}" font-size="14" font-weight="600">Top repositories</text>
+  {heading}
 "##,
         x = x,
         y = y,
-        title = theme.title,
+        heading = heading,
     );
 
     let mut row_y = 36.0;
@@ -320,6 +481,7 @@ fn render_homelab(
     x: f64,
     y: f64,
     w: f64,
+    period: Period,
 ) -> String {
     let temp = host
         .package_temp_c()
@@ -395,20 +557,40 @@ fn render_homelab(
     let charts_y = 28.0 + 2.0 * (cell_h + gap) + 8.0;
     let charts = render_homelab_charts(history, theme, w, charts_y);
     let hot = if host.is_hot() { " · hot" } else { "" };
+    let heading = sky_text(
+        "0",
+        "14",
+        theme,
+        SkyTone::Title,
+        14.0,
+        "700",
+        "Homelab",
+        period,
+        "",
+    );
+    let meta = sky_text(
+        &format!("{w:.1}", w = w),
+        "14",
+        theme,
+        SkyTone::Muted,
+        11.0,
+        "600",
+        &format!("last 4×15m{hot}"),
+        period,
+        r#"text-anchor="end""#,
+    );
 
     format!(
         r##"<g class="fade-in" style="animation-delay:0.8s" transform="translate({x:.1},{y:.1})">
-  <text x="0" y="14" fill="{title}" font-size="14" font-weight="600">Homelab</text>
-  <text x="{w:.1}" y="14" fill="{muted}" font-size="11" text-anchor="end">last 4×15m{hot}</text>
+  {heading}
+  {meta}
   {grid}
   {charts}
 </g>"##,
         x = x,
         y = y,
-        title = theme.title,
-        w = w,
-        muted = theme.muted,
-        hot = hot,
+        heading = heading,
+        meta = meta,
         grid = grid,
         charts = charts,
     )
@@ -525,7 +707,14 @@ fn sparkline_panel(
     )
 }
 
-fn render_lastfm(track: &RecentTrack, theme: &Theme, x: f64, y: f64, w: f64) -> String {
+fn render_lastfm(
+    track: &RecentTrack,
+    theme: &Theme,
+    x: f64,
+    y: f64,
+    w: f64,
+    period: Period,
+) -> String {
     let status = track.label();
     let line = truncate_chars(&format!("{} - {}", track.artist, track.name), 48);
     let album = track
@@ -554,9 +743,21 @@ fn render_lastfm(track: &RecentTrack, theme: &Theme, x: f64, y: f64, w: f64) -> 
         )
     };
 
+    let heading = sky_text(
+        "0",
+        "14",
+        theme,
+        SkyTone::Title,
+        14.0,
+        "700",
+        "Last.fm",
+        period,
+        "",
+    );
+
     format!(
         r##"<g class="fade-in" style="animation-delay:0.85s" transform="translate({x:.1},{y:.1})">
-  <text x="0" y="14" fill="{title}" font-size="14" font-weight="600">Last.fm</text>
+  {heading}
   <rect x="0" y="22" width="{w:.1}" height="40" rx="8" fill="{card}"/>
   {art}
   <text x="44" y="40" fill="{muted}" font-size="11">{status}</text>
@@ -565,7 +766,7 @@ fn render_lastfm(track: &RecentTrack, theme: &Theme, x: f64, y: f64, w: f64) -> 
 </g>"##,
         x = x,
         y = y,
-        title = theme.title,
+        heading = heading,
         w = w,
         card = theme.card,
         art = art,
@@ -613,16 +814,20 @@ fn render_footer(
     } else {
         " · ghcamos"
     };
-    format!(
-        r##"<g class="fade-in" style="animation-delay:1s" transform="translate({x:.1},{y:.1})">
-  <text x="0" y="14" fill="{muted}" font-size="11">Updated {stamp} · {period}{credit}</text>
-</g>"##,
-        x = x,
-        y = y,
-        muted = theme.muted,
+    let line = format!(
+        "Updated {stamp} · {period}{credit}",
         stamp = stamp,
         period = escape_xml(&period_label),
         credit = credit,
+    );
+    let text = sky_text("0", "14", theme, SkyTone::Muted, 11.0, "600", &line, period, "");
+    format!(
+        r##"<g class="fade-in" style="animation-delay:1s" transform="translate({x:.1},{y:.1})">
+  {text}
+</g>"##,
+        x = x,
+        y = y,
+        text = text,
     )
 }
 
