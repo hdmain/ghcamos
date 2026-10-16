@@ -259,7 +259,7 @@ fn render_repos(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) -> Str
 
     let mut row_y = 36.0;
     for (i, repo) in stats.top_repos.iter().enumerate() {
-        let lang = repo.language.as_deref().unwrap_or("—");
+        let lang = repo.language.as_deref().unwrap_or("-");
         let delay = 0.78 + i as f64 * 0.08;
         out.push_str(&format!(
             r##"<g class="fade-in" style="animation-delay:{delay:.2}s">
@@ -291,7 +291,7 @@ fn render_homelab(host: &HomelabStats, theme: &Theme, x: f64, y: f64, w: f64) ->
     let temp = host
         .package_temp_c()
         .map(|t| format!("{t:.0}°C"))
-        .unwrap_or_else(|| "—".into());
+        .unwrap_or_else(|| "-".into());
     let mem = format!(
         "{} / {}",
         homelab::format_bytes(host.memory.used_bytes),
@@ -354,7 +354,7 @@ fn render_homelab(host: &HomelabStats, theme: &Theme, x: f64, y: f64, w: f64) ->
 
 fn render_lastfm(track: &RecentTrack, theme: &Theme, x: f64, y: f64, w: f64) -> String {
     let status = track.label();
-    let line = truncate_chars(&format!("{} — {}", track.artist, track.name), 48);
+    let line = truncate_chars(&format!("{} - {}", track.artist, track.name), 48);
     let album = track
         .album
         .as_deref()
@@ -401,7 +401,7 @@ fn render_lastfm(track: &RecentTrack, theme: &Theme, x: f64, y: f64, w: f64) -> 
         accent = theme.accent,
         line = escape_xml(&line),
         tip = escape_xml(&format!(
-            "{}: {} — {}{}",
+            "{}: {} - {}{}",
             status,
             track.artist,
             track.name,
@@ -473,7 +473,7 @@ fn format_member_since(created_at: &str) -> String {
 
 fn years_on_github(created_at: &str) -> String {
     let Ok(created) = chrono::DateTime::parse_from_rfc3339(created_at) else {
-        return "—".into();
+        return "-".into();
     };
     let days = (Utc::now() - created.with_timezone(&Utc)).num_days();
     let years = (days as f64 / 365.25).floor() as i64;

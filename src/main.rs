@@ -127,7 +127,7 @@ async fn run() -> Result<()> {
                     Ok(track) => {
                         if let Some(ref t) = track {
                             eprintln!(
-                                "lastfm={} — {} · {}",
+                                "lastfm={} - {} · {}",
                                 t.label(),
                                 t.artist,
                                 t.name
