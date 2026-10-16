@@ -46,13 +46,13 @@ cargo run --release -- render --user hdmain --out stats.svg
 
 Optional: create a free [Last.fm API key](https://www.last.fm/api/account/create) and add repo secret `LASTFM_API_KEY`.
 
-Pixel sky backgrounds live in [`bgs/`](bgs/) (`mornig`, `day`, `night`) as stacked layers (`1.png` sky + drifting clouds). Cron every 15m picks the period from Warsaw local time; cloud layers slowly scroll via SMIL.
+Pixel sky backgrounds live in [`bgs/`](bgs/) (`mornig`, `day`, `night`) as stacked layers (`1.png` sky + drifting clouds). Period follows Warsaw local time; cloud layers slowly scroll via SMIL.
 
 Optional sections (Homelab, Last.fm) **retry 3×** then disappear from the card if the API is still down — no error placeholders.
 
 ## GitHub Actions
 
-Workflow [`.github/workflows/render.yml`](.github/workflows/render.yml) builds, renders `dist/stats.svg`, and deploys to GitHub Pages every 15 minutes (plus on push / manual dispatch).
+Workflow [`.github/workflows/render.yml`](.github/workflows/render.yml) builds, renders `dist/stats.svg`, and deploys to GitHub Pages on push, manual dispatch, hourly GitHub `schedule` (best-effort), and — reliably — via `ghcamos-host` calling `workflow_dispatch` every hour.
 
 One-time setup:
 
@@ -77,6 +77,19 @@ On the Linux box:
 
 ```bash
 cargo build --release --bin ghcamos-host
-./target/release/ghcamos-host --listen 0.0.0.0:7428 --label host
-# expose via reverse proxy → https://homelabstats.alfahost.eu/stats
+
+# Fine-grained PAT: Actions → Read and write on hdmain/ghcamos
+# (or classic PAT with `repo` / `workflow`)
+export GHCAMOS_DISPATCH_TOKEN=ghp_...
+
+./target/release/ghcamos-host \
+  --listen 0.0.0.0:7428 \
+  --label host \
+  --dispatch-repo hdmain/ghcamos \
+  --dispatch-workflow render.yml \
+  --dispatch-ref master \
+  --dispatch-interval-secs 3600
+# expose /stats via reverse proxy → https://homelabstats.alfahost.eu/stats
 ```
+
+Without `GHCAMOS_DISPATCH_TOKEN` the host only serves metrics (dispatch stays off).

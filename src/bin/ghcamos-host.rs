@@ -1,5 +1,8 @@
 //! Public host metrics HTTP daemon for Linux (no private identifiers).
 //!
+//! Optionally pings GitHub Actions `workflow_dispatch` on an interval so the
+//! stats card refreshes even when GitHub's own `schedule` cron is dropped.
+//!
 //! ```bash
 //! cargo run --release --bin ghcamos-host
 //! # listens on 0.0.0.0:7428
@@ -16,6 +19,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use clap::Parser;
 use serde::Serialize;
+use serde_json::json;
 use sysinfo::{Components, Disks, Networks, System};
 use tower_http::cors::{Any, CorsLayer};
 
@@ -32,11 +36,46 @@ struct Cli {
     /// Public display label (never use real hostname / username)
     #[arg(long, env = "GHCAMOS_HOST_LABEL", default_value = "host")]
     label: String,
+
+    /// GitHub PAT with `actions:write` (or classic `repo`) to trigger card rebuilds.
+    /// If unset, dispatch is disabled and the host only serves /stats.
+    #[arg(long, env = "GHCAMOS_DISPATCH_TOKEN")]
+    dispatch_token: Option<String>,
+
+    /// `owner/repo` for workflow_dispatch
+    #[arg(long, env = "GHCAMOS_DISPATCH_REPO", default_value = "hdmain/ghcamos")]
+    dispatch_repo: String,
+
+    /// Workflow file name or numeric id
+    #[arg(long, env = "GHCAMOS_DISPATCH_WORKFLOW", default_value = "render.yml")]
+    dispatch_workflow: String,
+
+    /// Git ref to run the workflow on
+    #[arg(long, env = "GHCAMOS_DISPATCH_REF", default_value = "master")]
+    dispatch_ref: String,
+
+    /// Seconds between workflow_dispatch calls (default 1h)
+    #[arg(long, env = "GHCAMOS_DISPATCH_INTERVAL_SECS", default_value_t = 3600)]
+    dispatch_interval_secs: u64,
+
+    /// Skip the initial dispatch on startup (wait a full interval first)
+    #[arg(long, env = "GHCAMOS_DISPATCH_SKIP_STARTUP", default_value_t = false)]
+    dispatch_skip_startup: bool,
 }
 
 #[derive(Clone)]
 struct AppState {
     label: String,
+}
+
+#[derive(Clone)]
+struct DispatchConfig {
+    token: String,
+    repo: String,
+    workflow: String,
+    git_ref: String,
+    interval: Duration,
+    skip_startup: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -89,7 +128,22 @@ struct TempReading {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-    let state = AppState { label: sanitize_label(&cli.label) };
+    let state = AppState {
+        label: sanitize_label(&cli.label),
+    };
+
+    if let Some(cfg) = dispatch_config_from_cli(&cli) {
+        eprintln!(
+            "workflow_dispatch: every {}s → {} @ {} ({})",
+            cfg.interval.as_secs(),
+            cfg.repo,
+            cfg.git_ref,
+            cfg.workflow
+        );
+        tokio::spawn(dispatch_loop(cfg));
+    } else {
+        eprintln!("workflow_dispatch: disabled (set GHCAMOS_DISPATCH_TOKEN to enable)");
+    }
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -119,6 +173,86 @@ async fn main() {
             eprintln!("server error: {e}");
             std::process::exit(1);
         });
+}
+
+fn dispatch_config_from_cli(cli: &Cli) -> Option<DispatchConfig> {
+    let token = cli
+        .dispatch_token
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            std::env::var("GH_TOKEN")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        })?;
+    let interval_secs = cli.dispatch_interval_secs.max(60);
+    Some(DispatchConfig {
+        token,
+        repo: cli.dispatch_repo.trim().to_string(),
+        workflow: cli.dispatch_workflow.trim().to_string(),
+        git_ref: cli.dispatch_ref.trim().to_string(),
+        interval: Duration::from_secs(interval_secs),
+        skip_startup: cli.dispatch_skip_startup,
+    })
+}
+
+async fn dispatch_loop(cfg: DispatchConfig) {
+    if !cfg.skip_startup {
+        trigger_workflow_dispatch(&cfg).await;
+    }
+    let mut ticker = tokio::time::interval(cfg.interval);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    // First tick completes immediately — skip it after optional startup dispatch.
+    ticker.tick().await;
+    loop {
+        ticker.tick().await;
+        trigger_workflow_dispatch(&cfg).await;
+    }
+}
+
+async fn trigger_workflow_dispatch(cfg: &DispatchConfig) {
+    let url = format!(
+        "https://api.github.com/repos/{}/actions/workflows/{}/dispatches",
+        cfg.repo, cfg.workflow
+    );
+    let client = match reqwest::Client::builder()
+        .user_agent("ghcamos-host/0.1 (+https://github.com/hdmain/ghcamos)")
+        .timeout(Duration::from_secs(20))
+        .build()
+    {
+        Ok(c) => c,
+        Err(err) => {
+            eprintln!("workflow_dispatch: client error: {err}");
+            return;
+        }
+    };
+
+    let resp = client
+        .post(&url)
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .bearer_auth(&cfg.token)
+        .json(&json!({ "ref": cfg.git_ref }))
+        .send()
+        .await;
+
+    match resp {
+        Ok(r) if r.status().as_u16() == 204 || r.status().is_success() => {
+            eprintln!(
+                "workflow_dispatch: ok → {} ({})",
+                cfg.workflow, cfg.git_ref
+            );
+        }
+        Ok(r) => {
+            let status = r.status();
+            let body = r.text().await.unwrap_or_default();
+            let body = body.chars().take(240).collect::<String>();
+            eprintln!("workflow_dispatch: HTTP {status}: {body}");
+        }
+        Err(err) => eprintln!("workflow_dispatch: request failed: {err}"),
+    }
 }
 
 async fn stats_handler(State(state): State<AppState>) -> impl IntoResponse {
