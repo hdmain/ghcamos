@@ -1,3 +1,4 @@
+mod bg;
 mod error;
 mod fire;
 mod github;
@@ -8,6 +9,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
+use crate::bg::Period;
 use crate::error::{AppError, Result};
 use crate::github::{fetch_lifetime_contributions, fetch_user_stats};
 use crate::svg::render_stats_card;
@@ -40,6 +42,10 @@ enum Commands {
         #[arg(long, short)]
         out: Option<PathBuf>,
 
+        /// Background period: auto | morning | day | night (auto = Europe/Warsaw clock)
+        #[arg(long, default_value = "auto")]
+        period: String,
+
         /// GitHub token (or set GH_TOKEN / GITHUB_TOKEN)
         #[arg(long, env = "GH_TOKEN")]
         token: Option<String>,
@@ -62,10 +68,16 @@ async fn run() -> Result<()> {
             theme,
             width,
             out,
+            period,
             token,
         } => {
             let token = resolve_token(token)?;
             let theme = parse_theme(&theme)?;
+            let period = Period::parse(&period).ok_or_else(|| {
+                AppError::Api(format!(
+                    "unknown period `{period}`; expected auto|morning|day|night"
+                ))
+            })?;
             let mut stats = fetch_user_stats(&token, &user).await?;
             let (commits, prs, issues, reviews) =
                 fetch_lifetime_contributions(&token, &user, &stats.created_at).await?;
@@ -74,7 +86,8 @@ async fn run() -> Result<()> {
             stats.issues = issues;
             stats.reviews = reviews;
 
-            let svg = render_stats_card(&stats, &theme, width);
+            eprintln!("period={}", period.as_str());
+            let svg = render_stats_card(&stats, &theme, width, period);
             match out {
                 Some(path) => {
                     if let Some(parent) = path.parent() {

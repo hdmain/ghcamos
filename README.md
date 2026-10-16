@@ -32,9 +32,12 @@ cargo run --release -- render --user hdmain --out stats.svg
 |------|---------|-------|
 | `--user` | `hdmain` | GitHub login |
 | `--theme` | `github_dark` | `github_dark` · `light` · `nord` |
+| `--period` | `auto` | `auto` · `morning` · `day` · `night` (auto = Europe/Warsaw: 05–11 / 11–18 / else) |
 | `--width` | `680` | 360–1600 |
 | `--out` / `-o` | stdout | output path |
 | `--token` | `GH_TOKEN` / `GITHUB_TOKEN` | PAT or Actions token |
+
+Pixel sky backgrounds live in [`bgs/`](bgs/) (`mornig`, `day`, `night`). Cron every 15m picks the period from Warsaw local time.
 
 ## GitHub Actions
 

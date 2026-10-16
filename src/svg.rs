@@ -1,10 +1,11 @@
 use chrono::Utc;
 
+use crate::bg::{self, Period};
 use crate::fire::{self, render_corner_fires};
 use crate::github::UserStats;
 use crate::theme::Theme;
 
-pub fn render_stats_card(stats: &UserStats, theme: &Theme, width: u32) -> String {
+pub fn render_stats_card(stats: &UserStats, theme: &Theme, width: u32, period: Period) -> String {
     let width = width.clamp(360, 1600);
     let pad = 24.0;
     let inner_w = width as f64 - pad * 2.0;
@@ -44,12 +45,13 @@ pub fn render_stats_card(stats: &UserStats, theme: &Theme, width: u32) -> String
         y += repos_h + gap;
     }
 
-    let footer = render_footer(theme, pad, y, inner_w);
+    let footer = render_footer(theme, pad, y, inner_w, period);
     y += footer_h + fire_h * 0.55;
     y += pad;
 
     let height = y.ceil() as u32;
     let fires = render_corner_fires(width, height);
+    let background = bg::render_background(period, width, height);
 
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -75,8 +77,7 @@ pub fn render_stats_card(stats: &UserStats, theme: &Theme, width: u32) -> String
       animation: softPulse 2.8s ease-in-out infinite;
     }}
   </style>
-  <rect class="fade-in" width="{width}" height="{height}" rx="12" fill="{bg}" stroke="{border}" stroke-width="1"/>
-  <rect class="accent-line" x="24" y="4" width="48" height="3" rx="1.5" fill="{accent}"/>
+  {background}
   {sections}
   {footer}
   {fires}
@@ -85,9 +86,7 @@ pub fn render_stats_card(stats: &UserStats, theme: &Theme, width: u32) -> String
         width = width,
         height = height,
         login = escape_xml(&stats.login),
-        bg = theme.bg,
-        border = theme.border,
-        accent = theme.accent,
+        background = background,
         sections = sections,
         footer = footer,
         fires = fires,
@@ -258,16 +257,18 @@ fn render_repos(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) -> Str
     out
 }
 
-fn render_footer(theme: &Theme, x: f64, y: f64, _w: f64) -> String {
+fn render_footer(theme: &Theme, x: f64, y: f64, _w: f64, period: Period) -> String {
     let stamp = Utc::now().format("%Y-%m-%d UTC").to_string();
+    let period_label = bg::period_label(period);
     format!(
         r##"<g class="fade-in" style="animation-delay:1s" transform="translate({x:.1},{y:.1})">
-  <text x="0" y="14" fill="{muted}" font-size="11">Updated {stamp} · ghcamos · fire by Devkidd</text>
+  <text x="0" y="14" fill="{muted}" font-size="11">Updated {stamp} · {period} · ghcamos · fire by Devkidd</text>
 </g>"##,
         x = x,
         y = y,
         muted = theme.muted,
         stamp = stamp,
+        period = escape_xml(&period_label),
     )
 }
 

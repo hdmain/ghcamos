@@ -3,7 +3,9 @@ use crate::error::{AppError, Result};
 #[derive(Debug, Clone, Copy)]
 pub struct Theme {
     pub name: &'static str,
+    #[allow(dead_code)]
     pub bg: &'static str,
+    #[allow(dead_code)]
     pub border: &'static str,
     pub title: &'static str,
     pub text: &'static str,
