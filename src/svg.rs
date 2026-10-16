@@ -1,5 +1,6 @@
 use chrono::Utc;
 
+use crate::fire::{self, render_corner_fires};
 use crate::github::UserStats;
 use crate::theme::Theme;
 
@@ -21,6 +22,7 @@ pub fn render_stats_card(stats: &UserStats, theme: &Theme, width: u32) -> String
         28.0 + stats.top_repos.len() as f64 * 28.0
     };
     let footer_h = 28.0;
+    let fire_h = fire::display_height();
     let gap = 16.0;
 
     let mut y = pad;
@@ -43,16 +45,19 @@ pub fn render_stats_card(stats: &UserStats, theme: &Theme, width: u32) -> String
     }
 
     let footer = render_footer(theme, pad, y, inner_w);
-    y += footer_h;
+    y += footer_h + fire_h * 0.55;
+    y += pad;
 
-    let height = (y + pad).ceil() as u32;
+    let height = y.ceil() as u32;
+    let fires = render_corner_fires(width, height);
 
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="{login} GitHub stats">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="{login} GitHub stats">
   <title>{login} GitHub stats</title>
   <style>
     text {{ font-family: 'Segoe UI', Helvetica, Arial, sans-serif; }}
+    image {{ image-rendering: pixelated; image-rendering: crisp-edges; }}
     @keyframes fadeUp {{
       from {{ opacity: 0; transform: translateY(8px); }}
       to {{ opacity: 1; transform: translateY(0); }}
@@ -90,6 +95,7 @@ pub fn render_stats_card(stats: &UserStats, theme: &Theme, width: u32) -> String
   <rect class="accent-line" x="24" y="4" width="48" height="3" rx="1.5" fill="{accent}"/>
   {sections}
   {footer}
+  {fires}
 </svg>
 "##,
         width = width,
@@ -100,6 +106,7 @@ pub fn render_stats_card(stats: &UserStats, theme: &Theme, width: u32) -> String
         accent = theme.accent,
         sections = sections,
         footer = footer,
+        fires = fires,
     )
 }
 
@@ -270,7 +277,7 @@ fn render_footer(theme: &Theme, x: f64, y: f64, _w: f64) -> String {
     let stamp = Utc::now().format("%Y-%m-%d UTC").to_string();
     format!(
         r##"<g class="fade-in" style="animation-delay:1s" transform="translate({x:.1},{y:.1})">
-  <text x="0" y="14" fill="{muted}" font-size="11">Updated {stamp} · ghcamos</text>
+  <text x="0" y="14" fill="{muted}" font-size="11">Updated {stamp} · ghcamos · fire by Devkidd</text>
 </g>"##,
         x = x,
         y = y,

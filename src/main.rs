@@ -1,4 +1,5 @@
 mod error;
+mod fire;
 mod github;
 mod svg;
 mod theme;

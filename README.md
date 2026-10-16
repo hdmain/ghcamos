@@ -52,4 +52,5 @@ One-time setup:
 - Lifetime stats: commits, PRs, issues, reviews, owned stars, followers
 - Top languages (by bytes across owned non-fork repos)
 - Top 3 owned repos by stars
+- Pixel fire corner animations (SMIL sprite sheet) from [Devkidd — Pixel Fire Asset Pack v1.2](https://devkidd.itch.io/pixel-fire-asset-pack)
 - Footer with render timestamp
