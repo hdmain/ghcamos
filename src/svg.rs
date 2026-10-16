@@ -53,8 +53,41 @@ pub fn render_stats_card(stats: &UserStats, theme: &Theme, width: u32) -> String
   <title>{login} GitHub stats</title>
   <style>
     text {{ font-family: 'Segoe UI', Helvetica, Arial, sans-serif; }}
+    @keyframes fadeUp {{
+      from {{ opacity: 0; transform: translateY(8px); }}
+      to {{ opacity: 1; transform: translateY(0); }}
+    }}
+    @keyframes fadeIn {{
+      from {{ opacity: 0; }}
+      to {{ opacity: 1; }}
+    }}
+    @keyframes growX {{
+      from {{ transform: scaleX(0); }}
+      to {{ transform: scaleX(1); }}
+    }}
+    @keyframes softPulse {{
+      0%, 100% {{ opacity: 0.35; }}
+      50% {{ opacity: 0.85; }}
+    }}
+    .fade-up {{
+      opacity: 0;
+      animation: fadeUp 0.55s ease-out forwards;
+    }}
+    .fade-in {{
+      opacity: 0;
+      animation: fadeIn 0.7s ease-out forwards;
+    }}
+    .bar-fill {{
+      transform-origin: left center;
+      transform-box: fill-box;
+      animation: growX 0.85s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }}
+    .accent-line {{
+      animation: softPulse 2.8s ease-in-out infinite;
+    }}
   </style>
-  <rect width="{width}" height="{height}" rx="12" fill="{bg}" stroke="{border}" stroke-width="1"/>
+  <rect class="fade-in" width="{width}" height="{height}" rx="12" fill="{bg}" stroke="{border}" stroke-width="1"/>
+  <rect class="accent-line" x="24" y="4" width="48" height="3" rx="1.5" fill="{accent}"/>
   {sections}
   {footer}
 </svg>
@@ -64,6 +97,7 @@ pub fn render_stats_card(stats: &UserStats, theme: &Theme, width: u32) -> String
         login = escape_xml(&stats.login),
         bg = theme.bg,
         border = theme.border,
+        accent = theme.accent,
         sections = sections,
         footer = footer,
     )
@@ -79,7 +113,7 @@ fn render_header(stats: &UserStats, theme: &Theme, x: f64, y: f64, _w: f64) -> S
     let member = format_member_since(&stats.created_at);
 
     format!(
-        r##"<g transform="translate({x:.1},{y:.1})">
+        r##"<g class="fade-up" style="animation-delay:0.05s" transform="translate({x:.1},{y:.1})">
   <text x="0" y="20" fill="{title}" font-size="20" font-weight="600">{display}</text>
   <text x="0" y="42" fill="{muted}" font-size="13">@{login} · Member since {member} · {years} on GitHub</text>
 </g>"##,
@@ -124,12 +158,14 @@ fn render_stat_grid(
         let row = i / cols;
         let cx = col as f64 * (cell_w + gap);
         let cy = row as f64 * (cell_h + gap);
+        let delay = 0.12 + i as f64 * 0.06;
         out.push_str(&format!(
-            r##"<g transform="translate({cx:.1},{cy:.1})">
+            r##"<g class="fade-up" style="animation-delay:{delay:.2}s" transform="translate({cx:.1},{cy:.1})">
   <rect width="{cell_w:.1}" height="{cell_h:.1}" rx="8" fill="{card}"/>
   <text x="12" y="20" fill="{muted}" font-size="12">{label}</text>
   <text x="12" y="42" fill="{title}" font-size="20" font-weight="600">{value}</text>
 </g>"##,
+            delay = delay,
             cx = cx,
             cy = cy,
             cell_w = cell_w,
@@ -150,7 +186,7 @@ fn render_languages(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) ->
     let total: u64 = stats.languages.iter().map(|l| l.bytes).sum::<u64>().max(1);
     let bar_w = w;
     let mut out = format!(
-        r##"<g transform="translate({x:.1},{y:.1})">
+        r##"<g class="fade-up" style="animation-delay:0.45s" transform="translate({x:.1},{y:.1})">
   <text x="0" y="14" fill="{title}" font-size="14" font-weight="600">Top languages</text>
 "##,
         x = x,
@@ -159,14 +195,17 @@ fn render_languages(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) ->
     );
 
     let mut row_y = 34.0;
-    for lang in &stats.languages {
+    for (i, lang) in stats.languages.iter().enumerate() {
         let pct = lang.bytes as f64 / total as f64;
         let fill_w = (bar_w * pct).max(2.0);
+        let bar_delay = 0.55 + i as f64 * 0.08;
         out.push_str(&format!(
             r##"<text x="0" y="{label_y:.1}" fill="{text}" font-size="12">{name}</text>
 <text x="{bar_w:.1}" y="{label_y:.1}" fill="{muted}" font-size="12" text-anchor="end">{pct:.0}%</text>
 <rect x="0" y="{track_y:.1}" width="{bar_w:.1}" height="6" rx="3" fill="{track}"/>
-<rect x="0" y="{track_y:.1}" width="{fill_w:.1}" height="6" rx="3" fill="{color}"/>
+<rect class="bar-fill" style="animation-delay:{bar_delay:.2}s" x="0" y="{track_y:.1}" width="{fill_w:.1}" height="6" rx="3" fill="{color}">
+  <animate attributeName="width" from="0" to="{fill_w:.1}" dur="0.85s" begin="{bar_delay:.2}s" fill="freeze" calcMode="spline" keySplines="0.22 1 0.36 1" keyTimes="0;1"/>
+</rect>
 "##,
             label_y = row_y,
             text = theme.text,
@@ -176,6 +215,7 @@ fn render_languages(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) ->
             pct = pct * 100.0,
             track_y = row_y + 6.0,
             track = theme.bar_track,
+            bar_delay = bar_delay,
             fill_w = fill_w,
             color = &lang.color,
         ));
@@ -189,7 +229,7 @@ fn render_languages(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) ->
 fn render_repos(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) -> String {
     let mut out = format!(
         r##"<g transform="translate({x:.1},{y:.1})">
-  <text x="0" y="14" fill="{title}" font-size="14" font-weight="600">Top repositories</text>
+  <text class="fade-up" style="animation-delay:0.7s" x="0" y="14" fill="{title}" font-size="14" font-weight="600">Top repositories</text>
 "##,
         x = x,
         y = y,
@@ -197,13 +237,17 @@ fn render_repos(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) -> Str
     );
 
     let mut row_y = 36.0;
-    for repo in &stats.top_repos {
+    for (i, repo) in stats.top_repos.iter().enumerate() {
         let lang = repo.language.as_deref().unwrap_or("—");
+        let delay = 0.78 + i as f64 * 0.08;
         out.push_str(&format!(
-            r##"<rect x="0" y="{ry:.1}" width="{w:.1}" height="24" rx="6" fill="{card}"/>
-<text x="10" y="{ty:.1}" fill="{accent}" font-size="13" font-weight="600">{name}</text>
-<text x="{mx:.1}" y="{ty:.1}" fill="{muted}" font-size="12" text-anchor="end">★ {stars} · {lang}</text>
+            r##"<g class="fade-up" style="animation-delay:{delay:.2}s">
+  <rect x="0" y="{ry:.1}" width="{w:.1}" height="24" rx="6" fill="{card}"/>
+  <text x="10" y="{ty:.1}" fill="{accent}" font-size="13" font-weight="600">{name}</text>
+  <text x="{mx:.1}" y="{ty:.1}" fill="{muted}" font-size="12" text-anchor="end">★ {stars} · {lang}</text>
+</g>
 "##,
+            delay = delay,
             ry = row_y - 16.0,
             w = w,
             card = theme.card,
@@ -225,7 +269,7 @@ fn render_repos(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) -> Str
 fn render_footer(theme: &Theme, x: f64, y: f64, _w: f64) -> String {
     let stamp = Utc::now().format("%Y-%m-%d UTC").to_string();
     format!(
-        r##"<g transform="translate({x:.1},{y:.1})">
+        r##"<g class="fade-in" style="animation-delay:1s" transform="translate({x:.1},{y:.1})">
   <text x="0" y="14" fill="{muted}" font-size="11">Updated {stamp} · ghcamos</text>
 </g>"##,
         x = x,
