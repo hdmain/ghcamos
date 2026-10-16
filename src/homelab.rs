@@ -21,6 +21,7 @@ pub struct HomelabStats {
     pub memory: MemStats,
     pub swap: SwapStats,
     #[serde(default)]
+    #[allow(dead_code)]
     pub disk: DiskStats,
     #[serde(default)]
     pub temps_c: Vec<TempReading>,
