@@ -73,7 +73,8 @@ impl Period {
         match self {
             Self::Morning => ("#1a1020", 0.62),
             Self::Day => ("#0d1117", 0.58),
-            Self::Night => ("#0d1117", 0.48),
+            // Night art is bright (stars/moon); need a heavier veil than day.
+            Self::Night => ("#010409", 0.78),
         }
     }
 
