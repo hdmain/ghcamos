@@ -38,6 +38,7 @@ cargo run --release -- render --user hdmain --out stats.svg
 | `--lastfm-api-key` | `LASTFM_API_KEY` | optional; without it a public widget fallback is used |
 | `--no-lastfm` | off | hide the Last.fm section |
 | `--homelab-url` | `https://homelabstats.alfahost.eu/stats` | ghcamos-host JSON endpoint |
+| `--homelab-history-url` | Pages `homelab-history.json` | last 4×15m samples for sparklines |
 | `--no-homelab` | off | hide the Homelab section |
 | `--width` | `680` | 360–1600 |
 | `--out` / `-o` | stdout | output path |
@@ -65,7 +66,7 @@ One-time setup:
 - Lifetime stats: commits, PRs, issues, reviews, owned stars, followers
 - Top languages (by bytes across owned non-fork repos)
 - Top 3 owned repos by stars
-- Homelab host stats from [homelabstats.alfahost.eu](https://homelabstats.alfahost.eu/stats) (CPU / RAM / disk / temp / load / uptime)
+- Homelab host stats from [homelabstats.alfahost.eu](https://homelabstats.alfahost.eu/stats) (load/RAM/swap/temp/uptime as `x / x`, 4×15m CPU/RAM charts; fires auto-on at ≥90%)
 - Last.fm now-playing / last-played ([hdmain](https://www.last.fm/user/hdmain))
 - Optional pixel fire corners (`--fires`) from [Devkidd — Pixel Fire Asset Pack v1.2](https://devkidd.itch.io/pixel-fire-asset-pack)
 - Footer with render timestamp

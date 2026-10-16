@@ -3,7 +3,7 @@ use chrono::Utc;
 use crate::bg::{self, Period};
 use crate::fire::{self, render_corner_fires};
 use crate::github::UserStats;
-use crate::homelab::{self, HomelabStats};
+use crate::homelab::{self, HomelabHistory, HomelabStats};
 use crate::lastfm::RecentTrack;
 use crate::theme::Theme;
 
@@ -15,6 +15,7 @@ pub fn render_stats_card(
     show_fires: bool,
     lastfm: Option<&RecentTrack>,
     homelab: Option<&HomelabStats>,
+    homelab_history: Option<&HomelabHistory>,
 ) -> String {
     let width = width.clamp(360, 1600);
     let pad = 24.0;
@@ -34,7 +35,7 @@ pub fn render_stats_card(
     };
     let footer_h = 28.0;
     let lastfm_h = if lastfm.is_some() { 64.0 } else { 0.0 };
-    let homelab_h = if homelab.is_some() { 118.0 } else { 0.0 };
+    let homelab_h = if homelab.is_some() { 168.0 } else { 0.0 };
     let fire_h = if show_fires {
         fire::display_height() * 0.55
     } else {
@@ -62,7 +63,14 @@ pub fn render_stats_card(
     }
 
     if let Some(host) = homelab {
-        sections.push_str(&render_homelab(host, theme, pad, y, inner_w));
+        sections.push_str(&render_homelab(
+            host,
+            homelab_history,
+            theme,
+            pad,
+            y,
+            inner_w,
+        ));
         y += homelab_h + gap;
     }
 
@@ -287,22 +295,40 @@ fn render_repos(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) -> Str
     out
 }
 
-fn render_homelab(host: &HomelabStats, theme: &Theme, x: f64, y: f64, w: f64) -> String {
+fn render_homelab(
+    host: &HomelabStats,
+    history: Option<&HomelabHistory>,
+    theme: &Theme,
+    x: f64,
+    y: f64,
+    w: f64,
+) -> String {
     let temp = host
         .package_temp_c()
         .map(|t| format!("{t:.0}°C"))
         .unwrap_or_else(|| "-".into());
-    let mem = format!(
-        "{} / {}",
-        homelab::format_bytes(host.memory.used_bytes),
-        homelab::format_bytes(host.memory.total_bytes)
-    );
     let cells = [
-        ("CPU", format!("{:.0}%", host.cpu.usage_pct)),
-        ("RAM", format!("{:.0}%", host.mem_used_pct())),
-        ("Disk", format!("{:.0}%", host.disk.used_pct)),
+        (
+            "CPU load",
+            format!("{:.2} / {}", host.loadavg[0], host.cpu.cores),
+        ),
+        (
+            "RAM",
+            format!(
+                "{} / {}",
+                homelab::format_bytes(host.memory.used_bytes),
+                homelab::format_bytes(host.memory.total_bytes)
+            ),
+        ),
+        (
+            "Swap",
+            format!(
+                "{} / {}",
+                homelab::format_bytes(host.swap.used_bytes),
+                homelab::format_bytes(host.swap.total_bytes)
+            ),
+        ),
         ("Temp", temp),
-        ("Load", format!("{:.2}", host.loadavg[0])),
         ("Up", host.uptime_human()),
     ];
 
@@ -321,7 +347,7 @@ fn render_homelab(host: &HomelabStats, theme: &Theme, x: f64, y: f64, w: f64) ->
             r##"<g transform="translate({cx:.1},{cy:.1})">
   <rect width="{cell_w:.1}" height="{cell_h:.1}" rx="7" fill="{card}"/>
   <text x="10" y="14" fill="{muted}" font-size="10">{label}</text>
-  <text x="10" y="28" fill="{title}" font-size="13" font-weight="600">{value}</text>
+  <text x="10" y="28" fill="{title}" font-size="12" font-weight="600">{value}</text>
 </g>"##,
             cx = cx,
             cy = cy,
@@ -335,20 +361,136 @@ fn render_homelab(host: &HomelabStats, theme: &Theme, x: f64, y: f64, w: f64) ->
         ));
     }
 
+    let charts_y = 28.0 + 2.0 * (cell_h + gap) + 8.0;
+    let charts = render_homelab_charts(history, theme, w, charts_y);
+    let hot = if host.is_hot() { " · hot" } else { "" };
+
     format!(
         r##"<g class="fade-in" style="animation-delay:0.8s" transform="translate({x:.1},{y:.1})">
   <text x="0" y="14" fill="{title}" font-size="14" font-weight="600">Homelab</text>
-  <text x="{w:.1}" y="14" fill="{muted}" font-size="11" text-anchor="end">{cores} cores · {mem}</text>
+  <text x="{w:.1}" y="14" fill="{muted}" font-size="11" text-anchor="end">last 4×15m{hot}</text>
   {grid}
+  {charts}
 </g>"##,
         x = x,
         y = y,
         title = theme.title,
         w = w,
         muted = theme.muted,
-        cores = host.cpu.cores,
-        mem = escape_xml(&mem),
+        hot = hot,
         grid = grid,
+        charts = charts,
+    )
+}
+
+fn render_homelab_charts(
+    history: Option<&HomelabHistory>,
+    theme: &Theme,
+    w: f64,
+    y: f64,
+) -> String {
+    let Some(history) = history.filter(|h| h.samples.len() >= 2) else {
+        return format!(
+            r##"<text x="0" y="{y:.1}" fill="{muted}" font-size="10">charts appear after a few cron samples</text>"##,
+            y = y + 12.0,
+            muted = theme.muted,
+        );
+    };
+
+    let gap = 10.0;
+    let chart_w = (w - gap) / 2.0;
+    let chart_h = 44.0;
+
+    let cpu_vals: Vec<f32> = history.samples.iter().map(|s| s.cpu_pct).collect();
+    let mem_vals: Vec<f32> = history.samples.iter().map(|s| s.mem_pct()).collect();
+
+    let cpu_delta = cpu_vals.last().copied().unwrap_or(0.0) - cpu_vals.first().copied().unwrap_or(0.0);
+    let mem_delta = mem_vals.last().copied().unwrap_or(0.0) - mem_vals.first().copied().unwrap_or(0.0);
+
+    let left = sparkline_panel(
+        "CPU",
+        &cpu_vals,
+        cpu_delta,
+        theme,
+        0.0,
+        y,
+        chart_w,
+        chart_h,
+        theme.accent,
+    );
+    let right = sparkline_panel(
+        "RAM",
+        &mem_vals,
+        mem_delta,
+        theme,
+        chart_w + gap,
+        y,
+        chart_w,
+        chart_h,
+        "#3fb950",
+    );
+
+    format!("{left}{right}")
+}
+
+fn sparkline_panel(
+    title: &str,
+    values: &[f32],
+    delta_pp: f32,
+    theme: &Theme,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    stroke: &str,
+) -> String {
+    let pad_x = 10.0;
+    let pad_top = 18.0;
+    let pad_bot = 8.0;
+    let plot_w = w - pad_x * 2.0;
+    let plot_h = h - pad_top - pad_bot;
+    let n = values.len().max(2) as f64;
+    let max_v = values
+        .iter()
+        .copied()
+        .fold(1.0_f32, f32::max)
+        .max(1.0);
+
+    let mut points = String::new();
+    for (i, v) in values.iter().enumerate() {
+        let px = pad_x + (i as f64) * (plot_w / (n - 1.0));
+        let py = pad_top + plot_h * (1.0 - (*v / max_v) as f64);
+        if i > 0 {
+            points.push(' ');
+        }
+        points.push_str(&format!("{px:.1},{py:.1}"));
+    }
+
+    let delta_s = if delta_pp >= 0.0 {
+        format!("+{delta_pp:.1}pp")
+    } else {
+        format!("{delta_pp:.1}pp")
+    };
+
+    format!(
+        r##"<g transform="translate({x:.1},{y:.1})">
+  <rect width="{w:.1}" height="{h:.1}" rx="7" fill="{card}"/>
+  <text x="10" y="13" fill="{muted}" font-size="10">{title} · 4 samples</text>
+  <text x="{right:.1}" y="13" fill="{accent}" font-size="10" text-anchor="end">{delta}</text>
+  <polyline fill="none" stroke="{stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="{points}"/>
+</g>"##,
+        x = x,
+        y = y,
+        w = w,
+        h = h,
+        card = theme.card,
+        muted = theme.muted,
+        title = title,
+        right = w - 10.0,
+        accent = theme.accent,
+        delta = delta_s,
+        stroke = stroke,
+        points = points,
     )
 }
 

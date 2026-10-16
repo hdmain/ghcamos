@@ -15,7 +15,9 @@ use clap::{Parser, Subcommand};
 use crate::bg::Period;
 use crate::error::{AppError, Result};
 use crate::github::{fetch_lifetime_contributions, fetch_user_stats};
-use crate::homelab::{fetch_homelab_stats, DEFAULT_URL as HOMELAB_DEFAULT_URL};
+use crate::homelab::{
+    fetch_homelab_history, fetch_homelab_stats, DEFAULT_HISTORY_URL, DEFAULT_URL as HOMELAB_DEFAULT_URL,
+};
 use crate::lastfm::fetch_recent_track;
 use crate::svg::render_stats_card;
 use crate::theme::parse_theme;
@@ -71,6 +73,10 @@ enum Commands {
         #[arg(long, default_value = HOMELAB_DEFAULT_URL, env = "HOMELAB_STATS_URL")]
         homelab_url: String,
 
+        /// Rolling homelab history JSON (published on Pages)
+        #[arg(long, default_value = DEFAULT_HISTORY_URL, env = "HOMELAB_HISTORY_URL")]
+        homelab_history_url: String,
+
         /// Skip homelab section
         #[arg(long, default_value_t = false)]
         no_homelab: bool,
@@ -103,6 +109,7 @@ async fn run() -> Result<()> {
             lastfm_api_key,
             no_lastfm,
             homelab_url,
+            homelab_history_url,
             no_homelab,
             token,
         } => {
@@ -159,6 +166,7 @@ async fn run() -> Result<()> {
                 }
             };
 
+            let mut homelab_history = None;
             let homelab = if no_homelab {
                 None
             } else {
@@ -168,13 +176,19 @@ async fn run() -> Result<()> {
                 .await
                 {
                     Ok(h) => {
+                        let mut history =
+                            fetch_homelab_history(&homelab_history_url).await;
+                        history.push_sample(h.to_sample());
                         eprintln!(
-                            "homelab={} cpu={:.0}% mem={:.0}% disk={:.0}%",
+                            "homelab={} load={:.2}/{} ram={}/{} samples={}",
                             h.label,
-                            h.cpu.usage_pct,
-                            h.mem_used_pct(),
-                            h.disk.used_pct
+                            h.loadavg[0],
+                            h.cpu.cores,
+                            crate::homelab::format_bytes(h.memory.used_bytes),
+                            crate::homelab::format_bytes(h.memory.total_bytes),
+                            history.samples.len()
                         );
+                        homelab_history = Some(history);
                         Some(h)
                     }
                     Err(err) => {
@@ -184,15 +198,25 @@ async fn run() -> Result<()> {
                 }
             };
 
-            eprintln!("period={} fires={fires}", period.as_str());
+            let show_fires = fires
+                || homelab
+                    .as_ref()
+                    .map(|h| h.is_hot())
+                    .unwrap_or(false);
+            if show_fires && !fires {
+                eprintln!("fires auto-enabled: homelab metric >= 90%");
+            }
+
+            eprintln!("period={} fires={show_fires}", period.as_str());
             let svg = render_stats_card(
                 &stats,
                 &theme,
                 width,
                 period,
-                fires,
+                show_fires,
                 lastfm.as_ref(),
                 homelab.as_ref(),
+                homelab_history.as_ref(),
             );
             match out {
                 Some(path) => {
@@ -203,6 +227,15 @@ async fn run() -> Result<()> {
                     }
                     std::fs::write(&path, svg.as_bytes())?;
                     eprintln!("wrote {}", path.display());
+                    if let Some(history) = homelab_history.as_ref() {
+                        let hist_path = path
+                            .parent()
+                            .unwrap_or_else(|| std::path::Path::new("."))
+                            .join("homelab-history.json");
+                        let json = serde_json::to_string_pretty(history)?;
+                        std::fs::write(&hist_path, json)?;
+                        eprintln!("wrote {}", hist_path.display());
+                    }
                 }
                 None => print!("{svg}"),
             }
