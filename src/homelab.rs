@@ -129,17 +129,31 @@ impl HomelabStats {
         }
     }
 
+    fn load_pressure_pct(&self) -> f32 {
+        if self.cpu.cores == 0 {
+            0.0
+        } else {
+            (self.loadavg[0] as f32) / self.cpu.cores as f32 * 100.0
+        }
+    }
+
+    /// Per Homelab grid cell: CPU load, RAM, Swap, Temp, Up.
+    pub fn cell_hot_flags(&self) -> [bool; 5] {
+        [
+            self.cpu.usage_pct >= HOT_THRESHOLD_PCT
+                || self.load_pressure_pct() >= HOT_THRESHOLD_PCT,
+            self.mem_used_pct() >= HOT_THRESHOLD_PCT,
+            self.swap_used_pct() >= HOT_THRESHOLD_PCT,
+            self.package_temp_c()
+                .map(|t| t >= HOT_THRESHOLD_PCT)
+                .unwrap_or(false),
+            false,
+        ]
+    }
+
     /// True when any pressure metric is at/above 90%.
     pub fn is_hot(&self) -> bool {
-        self.cpu.usage_pct >= HOT_THRESHOLD_PCT
-            || self.mem_used_pct() >= HOT_THRESHOLD_PCT
-            || self.swap_used_pct() >= HOT_THRESHOLD_PCT
-            || self
-                .package_temp_c()
-                .map(|t| t >= HOT_THRESHOLD_PCT)
-                .unwrap_or(false)
-            || (self.cpu.cores > 0
-                && (self.loadavg[0] as f32) / self.cpu.cores as f32 * 100.0 >= HOT_THRESHOLD_PCT)
+        self.cell_hot_flags().iter().any(|&h| h)
     }
 }
 

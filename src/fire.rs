@@ -23,6 +23,44 @@ fn sheet_data_uri() -> String {
     format!("data:image/png;base64,{}", B64.encode(FIRE_SHEET))
 }
 
+fn anim_x_values() -> String {
+    let mut values = Vec::with_capacity(FRAME_COUNT as usize + 1);
+    for i in 0..FRAME_COUNT {
+        values.push(format!("{:.0}", -(i as f64 * FRAME_W)));
+    }
+    values.push("0".into());
+    values.join(";")
+}
+
+/// Small animated flame at `(x, y)` (top-left of the scaled sprite).
+pub fn render_inline_fire(x: f64, y: f64, scale: f64, id: &str) -> String {
+    let uri = sheet_data_uri();
+    let x_values = anim_x_values();
+    let clip = format!("fireClip-{id}");
+    format!(
+        r##"<defs>
+  <clipPath id="{clip}"><rect width="{fw:.0}" height="{fh:.0}"/></clipPath>
+</defs>
+<g style="image-rendering:pixelated" transform="translate({x:.1},{y:.1}) scale({scale})">
+  <g clip-path="url(#{clip})">
+    <image width="{sheet_w:.0}" height="{fh:.0}" href="{uri}" xlink:href="{uri}" x="0" y="0" style="image-rendering:pixelated">
+      <animate attributeName="x" values="{x_values}" dur="0.64s" repeatCount="indefinite" calcMode="discrete"/>
+    </image>
+  </g>
+</g>
+"##,
+        clip = clip,
+        fw = FRAME_W,
+        fh = FRAME_H,
+        sheet_w = FRAME_W * FRAME_COUNT as f64,
+        uri = uri,
+        x_values = x_values,
+        x = x,
+        y = y,
+        scale = scale,
+    )
+}
+
 /// Two mirrored pixel fires for the bottom corners of the card.
 pub fn render_corner_fires(card_width: u32, card_height: u32) -> String {
     let uri = sheet_data_uri();
@@ -32,13 +70,7 @@ pub fn render_corner_fires(card_width: u32, card_height: u32) -> String {
     let y = card_height as f64 - dh - 8.0;
     let left_x = pad;
     let right_x = card_width as f64 - pad - dw;
-
-    let mut values = Vec::with_capacity(FRAME_COUNT as usize + 1);
-    for i in 0..FRAME_COUNT {
-        values.push(format!("{:.0}", -(i as f64 * FRAME_W)));
-    }
-    values.push("0".into());
-    let x_values = values.join(";");
+    let x_values = anim_x_values();
 
     format!(
         r##"<defs>

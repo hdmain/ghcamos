@@ -1,7 +1,7 @@
 use chrono::Utc;
 
 use crate::bg::{self, Period};
-use crate::fire::{self, render_corner_fires};
+use crate::fire::{self, render_corner_fires, render_inline_fire};
 use crate::github::{Trend, UserStats};
 use crate::homelab::{self, HomelabHistory, HomelabStats};
 use crate::lastfm::RecentTrack;
@@ -80,7 +80,9 @@ pub fn render_stats_card(
         y += lastfm_h + gap;
     }
 
-    let footer = render_footer(theme, pad, y, inner_w, period, show_fires);
+    let any_hot = homelab.map(|h| h.is_hot()).unwrap_or(false);
+    let fire_credit = show_fires || any_hot;
+    let footer = render_footer(theme, pad, y, inner_w, period, fire_credit);
     y += footer_h + fire_h;
     y += pad;
 
@@ -347,11 +349,15 @@ fn render_homelab(
         ("Temp", temp),
         ("Up", host.uptime_human()),
     ];
+    let hot_flags = host.cell_hot_flags();
 
     let cols = 3usize;
     let gap = 8.0;
     let cell_w = (w - gap * (cols as f64 - 1.0)) / cols as f64;
     let cell_h = 36.0;
+    let fire_scale = 0.55;
+    let fire_disp_w = 32.0 * fire_scale;
+    let fire_disp_h = 48.0 * fire_scale;
 
     let mut grid = String::new();
     for (i, (label, value)) in cells.iter().enumerate() {
@@ -359,11 +365,19 @@ fn render_homelab(
         let row = i / cols;
         let cx = col as f64 * (cell_w + gap);
         let cy = 28.0 + row as f64 * (cell_h + gap);
+        let flame = if hot_flags.get(i).copied().unwrap_or(false) {
+            let fx = cell_w - fire_disp_w - 4.0;
+            let fy = (cell_h - fire_disp_h) / 2.0;
+            render_inline_fire(fx, fy, fire_scale, &format!("hl{i}"))
+        } else {
+            String::new()
+        };
         grid.push_str(&format!(
             r##"<g transform="translate({cx:.1},{cy:.1})">
   <rect width="{cell_w:.1}" height="{cell_h:.1}" rx="7" fill="{card}"/>
   <text x="10" y="14" fill="{muted}" font-size="10">{label}</text>
   <text x="10" y="28" fill="{title}" font-size="12" font-weight="600">{value}</text>
+  {flame}
 </g>"##,
             cx = cx,
             cy = cy,
@@ -374,6 +388,7 @@ fn render_homelab(
             title = theme.title,
             label = label,
             value = escape_xml(value),
+            flame = flame,
         ));
     }
 

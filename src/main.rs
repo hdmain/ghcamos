@@ -213,13 +213,10 @@ async fn run() -> Result<()> {
                 }
             };
 
-            let show_fires = fires
-                || homelab
-                    .as_ref()
-                    .map(|h| h.is_hot())
-                    .unwrap_or(false);
-            if show_fires && !fires {
-                eprintln!("fires auto-enabled: homelab metric >= 90%");
+            // Corner fires only with --fires; hot Homelab cells get an inline flame.
+            let show_fires = fires;
+            if homelab.as_ref().map(|h| h.is_hot()).unwrap_or(false) {
+                eprintln!("homelab hot: inline fire on metrics >= 90%");
             }
 
             eprintln!("period={} fires={show_fires}", period.as_str());
