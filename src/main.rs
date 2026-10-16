@@ -46,6 +46,10 @@ enum Commands {
         #[arg(long, default_value = "auto")]
         period: String,
 
+        /// Show corner pixel-fire sprites (off by default)
+        #[arg(long, default_value_t = false)]
+        fires: bool,
+
         /// GitHub token (or set GH_TOKEN / GITHUB_TOKEN)
         #[arg(long, env = "GH_TOKEN")]
         token: Option<String>,
@@ -69,6 +73,7 @@ async fn run() -> Result<()> {
             width,
             out,
             period,
+            fires,
             token,
         } => {
             let token = resolve_token(token)?;
@@ -86,8 +91,8 @@ async fn run() -> Result<()> {
             stats.issues = issues;
             stats.reviews = reviews;
 
-            eprintln!("period={}", period.as_str());
-            let svg = render_stats_card(&stats, &theme, width, period);
+            eprintln!("period={} fires={fires}", period.as_str());
+            let svg = render_stats_card(&stats, &theme, width, period, fires);
             match out {
                 Some(path) => {
                     if let Some(parent) = path.parent() {

@@ -5,7 +5,13 @@ use crate::fire::{self, render_corner_fires};
 use crate::github::UserStats;
 use crate::theme::Theme;
 
-pub fn render_stats_card(stats: &UserStats, theme: &Theme, width: u32, period: Period) -> String {
+pub fn render_stats_card(
+    stats: &UserStats,
+    theme: &Theme,
+    width: u32,
+    period: Period,
+    show_fires: bool,
+) -> String {
     let width = width.clamp(360, 1600);
     let pad = 24.0;
     let inner_w = width as f64 - pad * 2.0;
@@ -23,7 +29,11 @@ pub fn render_stats_card(stats: &UserStats, theme: &Theme, width: u32, period: P
         28.0 + stats.top_repos.len() as f64 * 28.0
     };
     let footer_h = 28.0;
-    let fire_h = fire::display_height();
+    let fire_h = if show_fires {
+        fire::display_height() * 0.55
+    } else {
+        0.0
+    };
     let gap = 16.0;
 
     let mut y = pad;
@@ -45,12 +55,16 @@ pub fn render_stats_card(stats: &UserStats, theme: &Theme, width: u32, period: P
         y += repos_h + gap;
     }
 
-    let footer = render_footer(theme, pad, y, inner_w, period);
-    y += footer_h + fire_h * 0.55;
+    let footer = render_footer(theme, pad, y, inner_w, period, show_fires);
+    y += footer_h + fire_h;
     y += pad;
 
     let height = y.ceil() as u32;
-    let fires = render_corner_fires(width, height);
+    let fires = if show_fires {
+        render_corner_fires(width, height)
+    } else {
+        String::new()
+    };
     let background = bg::render_background(period, width, height);
 
     format!(
@@ -257,18 +271,31 @@ fn render_repos(stats: &UserStats, theme: &Theme, x: f64, y: f64, w: f64) -> Str
     out
 }
 
-fn render_footer(theme: &Theme, x: f64, y: f64, _w: f64, period: Period) -> String {
+fn render_footer(
+    theme: &Theme,
+    x: f64,
+    y: f64,
+    _w: f64,
+    period: Period,
+    show_fires: bool,
+) -> String {
     let stamp = Utc::now().format("%Y-%m-%d UTC").to_string();
     let period_label = bg::period_label(period);
+    let credit = if show_fires {
+        " · ghcamos · fire by Devkidd"
+    } else {
+        " · ghcamos"
+    };
     format!(
         r##"<g class="fade-in" style="animation-delay:1s" transform="translate({x:.1},{y:.1})">
-  <text x="0" y="14" fill="{muted}" font-size="11">Updated {stamp} · {period} · ghcamos · fire by Devkidd</text>
+  <text x="0" y="14" fill="{muted}" font-size="11">Updated {stamp} · {period}{credit}</text>
 </g>"##,
         x = x,
         y = y,
         muted = theme.muted,
         stamp = stamp,
         period = escape_xml(&period_label),
+        credit = credit,
     )
 }
 

@@ -33,6 +33,7 @@ cargo run --release -- render --user hdmain --out stats.svg
 | `--user` | `hdmain` | GitHub login |
 | `--theme` | `github_dark` | `github_dark` · `light` · `nord` |
 | `--period` | `auto` | `auto` · `morning` · `day` · `night` (auto = Europe/Warsaw: 05–11 / 11–18 / else) |
+| `--fires` | off | corner pixel-fire sprites (kept in repo, opt-in) |
 | `--width` | `680` | 360–1600 |
 | `--out` / `-o` | stdout | output path |
 | `--token` | `GH_TOKEN` / `GITHUB_TOKEN` | PAT or Actions token |
@@ -55,5 +56,5 @@ One-time setup:
 - Lifetime stats: commits, PRs, issues, reviews, owned stars, followers
 - Top languages (by bytes across owned non-fork repos)
 - Top 3 owned repos by stars
-- Pixel fire corner animations (SMIL sprite sheet) from [Devkidd — Pixel Fire Asset Pack v1.2](https://devkidd.itch.io/pixel-fire-asset-pack)
+- Optional pixel fire corners (`--fires`) from [Devkidd — Pixel Fire Asset Pack v1.2](https://devkidd.itch.io/pixel-fire-asset-pack)
 - Footer with render timestamp
