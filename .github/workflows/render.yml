@@ -4,7 +4,8 @@ on:
   push:
     branches: [main, master]
   schedule:
-    - cron: "0 */6 * * *"
+    # GitHub may delay scheduled runs under load; 15m is the intended cadence.
+    - cron: "*/15 * * * *"
   workflow_dispatch:
 
 permissions:

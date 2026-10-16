@@ -38,7 +38,7 @@ cargo run --release -- render --user hdmain --out stats.svg
 
 ## GitHub Actions
 
-Workflow [`.github/workflows/render.yml`](.github/workflows/render.yml) builds, renders `dist/stats.svg`, and deploys to GitHub Pages every 6 hours (plus on push / manual dispatch).
+Workflow [`.github/workflows/render.yml`](.github/workflows/render.yml) builds, renders `dist/stats.svg`, and deploys to GitHub Pages every 15 minutes (plus on push / manual dispatch).
 
 One-time setup:
 
